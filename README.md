@@ -9,6 +9,7 @@ worp is a barebones algolia competitor at a fraction of the price (initial goal 
 
 NOMENCLATURE:
 
+```
 central                 refers to non-sharded data.  documents, locations, and meta are all "central" rocksdbs
 shard                   a chunk of data intended to be able to be stored on a different machine.  invinds, sovs, and tivs get sharded.
                             a shard contains bits of all 3. they need to live together for queries.  concept is still a bit vague here but better than before.  some instances in code might
@@ -56,6 +57,7 @@ roost                   where an owl lives.  nebulously refers "
 -------------------------------------------------------- non-MVP stuff:
 shard =                 this is a vague term in the worp code right now.  it's erroneously used to refer to any db instance.
                         also, historically a "shard" referred to a single index, only, but i just realized that a shard will need to contain chunks of multiple indexes
+```
 
 MVP features:
 

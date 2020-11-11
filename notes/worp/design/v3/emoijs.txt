@@ -1,0 +1,25 @@
+🐣 nest
+	🐉 ferret
+	👩‍🦳 chaperone
+🏢 dispatch
+	👩‍💻 dispatcher
+📚 library
+	👩‍🏫 librarian
+	👩‍💼 libraryManager
+🏛 delphi
+	🔮  oracle
+
+
+
+🧨 dynamodb tables
+
+🗃🧨 REPOS_TABLE
+
+🐉🧨 FERRETS_TABLE
+👩‍🦳🧨 CHAPERONES_TABLE
+
+
+👩‍🏫🧨 LIBRARIANS_TABLE
+👩‍💼🧨 LIBRARYMANAGERS_TABLE
+
+💐🧨 MISC_TABLE - holds dispatch and libraryAdmin endpoints

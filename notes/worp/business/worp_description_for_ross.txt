@@ -1,0 +1,96 @@
+worp_description_for_ross
+
+
+🛸 WORP
+
+worp is a barebones algolia competitor at a fraction of the price (initial goal is 10x less).  MVP = the first publicly available version. either v1.0.0 or v0.1.0 idk
+
+NOMENCLATURE:
+
+document = doc          single json object.  "record" in algolia i think
+field =                 an item in a document.  "attribute" in algolia
+table = collection =    a single group of documents (i cant decide between table vs collection so far)
+index =                 an index for a specific field in a specific collection.  stored in a discrete db on an ec2
+account =               1 user/email/pwd per account
+worp =                  the company name and the Search-As-A-Service product name
+worpdrive =             internally, this is the specific rust engine powering rust.  maybe in the future, "worp" would be renamed to "worpdrive" like if there were other worp offerings like worptail
+worptail = worp comet = log search service
+-------------------------------------------------------- non-MVP stuff:
+shard =                 this is a vague term in the worp code right now.  it's erroneously used to refer to any db instance.
+                        also, historically a "shard" referred to a single index, only, but i just realized that a shard will need to contain chunks of multiple indexes
+
+MVP features:
+
+note: [bracketed items] are non-critical MVP features / things that can be put off
+
+- website
+  - signup/login
+  - 1 collection per account
+  - search collection, view results as html formatted, raw json, formatted object, [or table (like dynamodb)]
+  - payments, upgrade, cancel
+  - view usage stats: num docs, num requests
+  - [basic query analytics: view the most common queries, and see a timescale graph per query - this can be fairly slow in MVP ]
+  - delete a doc
+  - insert a new doc
+  - [change schema stuff like which fields can be sorted by, which fields are indexed, etc]
+
+- search features
+  - prefix search
+  - phrase search
+  - non-configurable tokenization
+  - [fuzzy search]
+  - [support chinese,arabic tokenization]
+
+- search limitations (things NOT yet supported)
+  - facet search
+  - aggregates
+
+- monetization
+  - payment tiers, something like this:
+    - community:  $p/mo  - up to nD docs and nR requests per month.  probably p,nD,nR =  $0,  20k,  200k
+    - asteroid:   $p/mo  - up to nD docs and nR requests per month.  probably p,nD,nR =  $5,  50k,  500k
+    - moon:       $p/mo  - up to nD docs and nR requests per month.  probably p,nD,nR =  $10, 100k, 1000k
+    - planet:     $p/mo  - up to nD docs and nR requests per month.  probably p,nD,nR =  $15, 150k, 1500k
+
+- backend
+  - single ec2 per customer running the worp binary.
+  - 2 endpoints per ec2 - one for queries, and another for collection modification requests (insert, delete, etc)
+
+
+STRATEGY
+
+goal is to quickly release a basic algolia competitor by december.  algolia has a reputation for being very expensive, and they just dramatically increased their prices, so it seems inevitable for a cheaper competitor to appear soon.  the goal is to announce Worp quickly to discourage someone else for trying to make a cheap algolia competitor.  at that point, the goal will be to quickly increase the feature offerings to discourage an established player like google or AWS from building their own cheaper search service once they see that it's possible.
+
+previously, i'd been planning to spend a lot longer on this to get closer to algolia feature parity before releasing.  but i had a kind-of mentoring session chat w/ joe colopy, a tech investor (who founded and sold a company Bronto in durham i used to work for).  and he really stressed releasing as soon as possible, no matter how crappy it is.  he stressed that Bronto was really "duct-taped" together when he first released it, in really terrible shape, barely functional. and then once you have real customer traction you invest in code cleanup, refactoring.  and he strongly discouraged seeking funding.
+
+so since i shouldn't/can't incur financial debt, the goal is to take on as much tech debt for the MVP as is feasible.  not-super-clean code, and manual obligations instead of beautiful automation.  b/c of his chat, for instance, i gutted the distributed capabilities of worp to require it to run on a single ec2 for now with a fairly small collection size.  which is sad but a good starting point.  and maybe instead of an automated way to monitor customer usage, i'll just have to check every few days to see if any customers are over their usage level, and manually pause their accounts if so.  stuff like that.
+
+GO-TO-MARKET
+
+i'm thinking of having a soft release by starting with google ads and direct tech newsletter promotions in eastern europe and asia.  since i think a lot of global tech startups (potential customers) are built by freelancers there rn.  and to start getting feedback before getting first impressions in US/Europe
+
+
+LONG-TERM PLAN
+
+Road Map:
+
+
+- convert the MVP worp to a multi-ec2 distributed system to allow for 200k+ docs (maximum is around 16 M with current setup (using 3 bytes for docIds rn) )
+- faceted and aggregated searches (do this b4 distributed/sharded search?)
+- nested docs
+- new product offering: worptail - tweak the worpdrive to optimize for indexing/storing/search of IT logs.  to compete with the ELK stack
+   - grow/diverge worptail into a logging + security tool
+     - parlay worptail with Shellfish Chitin - a shellfish addon that monitors app versions on servers for security, like Tanium
+- grow worp into ecommerce search tool like algolia or yext
+   - product recommendations
+   - personalized search
+- build demo worp search page with a huge index.  start with wikipedia and/or (yelp?) businesses
+  - pipe dream - gradually grow this into a google/duckduckgo competitor
+
+
+BUT WHAT ABOUT SHELLFISH ?
+
+i didn't end up making it past the first round for the shellfish grant.  because i didn't have any customer traction yet, and also one of the judges thought i miscalculated the market size based on an Atlassian customer size analogy.  but i think this is a good thing, because if i'd gotten that MICRO grant for $10k, i would have had to commit to working on shellfish full time for the next year.  i'm still very excited about releasing and promoting shellfish, but i think Worp has a greater immediate potential of being a thriving jobs-creator.  and i think there's a reasonable chance of getting enough Worp customer traction within 5 months to apply to the "SEED" grant for $50k.  given that there's already an established market and demand for search-as-a-service, and algolia has such a strong reputation for being expensive. (versus shellfish which needs to kind of create a brand new market).  (and elasticsearch has a reputation for being fragile and complicated)
+
+so i hope i dont seem too frenetic/flaky with shellfish, but my goal right now is to focus on worp and release a commercially viable Worp version ASAP.  and either promote shellfish afterwards (in a couple months), or in the meantime.
+

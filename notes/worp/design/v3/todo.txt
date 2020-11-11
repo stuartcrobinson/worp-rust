@@ -1,0 +1,42 @@
+--------------------------------------------
+
+sept 13 2020 -
+
+just get v2 working. dont worry about anything else.
+
+--------------------------------------------
+dont learn packer. dont deal w/ aws.  get everything working locally.
+
+start chaperone, oracle, and library manager locally
+
+so, simulate a Nest, Delphi, and Library -- locally
+
+
+but -- use ddb!  so that means .... deploy ddb w/ code. using... sls?
+
+
+
+use python service in separate server to start ec2s
+
+wait a second.... maybe some species dont have to be in rust ....
+
+use typescript and packer
+only use rust when it's necessary (ferrets and librarians).  well it's not necessary for librarians, but the indexing/rocksdb code is already written in rust.  also use for oracle for speed.
+
+
+
+WORKERS:
+
+ferret, librarian, oracle: rust
+
+MANAGERS:
+
+so chaperone, librarymanager, overmind: use typescript
+
+
+use lambdas for overmind!  so use serverlessframework isntead of terraform.
+
+
+- put worpdrive back in worp-rust ... stupid to lose all those commits/messages
+- rename to squirrel, ferret, owl.
+- overmind --> lion?  beaver (cos architect)?

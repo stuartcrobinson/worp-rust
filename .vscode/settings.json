@@ -1,0 +1,17 @@
+{
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#192C54",
+    "titleBar.activeBackground": "#233E76",
+    "titleBar.activeForeground": "#FBFCFE"
+  },
+  "editor.defaultFormatter": "matklad.rust-analyzer",
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust"
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "be5invis.toml"
+  },
+  "[shellscript]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  }
+}

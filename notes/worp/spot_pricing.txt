@@ -1,0 +1,36 @@
+aws spot pricing
+https://aws.amazon.com/ec2/spot/instance-advisor/
+https://aws.amazon.com/ec2/spot/pricing/
+
+vcpu    gb mem
+2       0.5     t3.nano --  $0.0032/GB-hr   69% savings
+2       1       t3.micro -  $0.0031         70%
+2       3.75    c4.large -  $0.0048/GB-hr   82%
+2       8       m4.large -  $0.0024/GB-hr   81%
+8       64      r5.2xlarge  $0.0015/GB-hr   81%
+1       2       a1.medium   $0.00245        81%
+4       8       a1.xlarge   $0.0025/GB-hr   81%
+8       15      c4.2xlarge  $0.0049         81%
+8       16      c5d.2xlarge $0.00475        80%
+16      32      a1.metal    $0.0025         81%     15% interruptions tho
+96      192     c5d.metal   $0.0047         80%
+
+packet
+4   8       t1.small.x86    $0.07/hr    $0.00875/GB-hr
+
+google 
+https://cloud.google.com/compute/vm-instance-pricing
+$0.007986 / vCPU hour
+$0.001076 / GB hour
+
+so t3.nano equivalent would be $0.0084/GB-hr - over twice aws 
+
+NOTE i think 1 GB can be opened within 1 second.  
+so I.I.s could be sitting on disk and opened when needed.  like at night with sparse usage. 
+
+dispatcher needs to run in the browser every two minutes to update endpoint in case spot instance cancelled.  
+
+
+https://stackoverflow.com/questions/53452970/increasing-mysql-query-speed-by-less-than-0-1ms-request
+
+mysql booking.com slaves 

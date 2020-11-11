@@ -1,0 +1,306 @@
+
+################################################################################################################################################
+GENERAL PROBLEM / SPACE
+
+companies need fast search
+
+- studies equating loading speed and website speed with revenue diff
+
+################################################################################################################################################
+VALIDATION
+
+
+elasticsearch
+algolia
+research studies about web speed and revenue+
+
+https://www.algolia.com/resources/customers/
+https://www.npr.org/search?query=then%20until%20but&page=1
+https://hn.algolia.com/
+https://www.legalzoom.com/
+
+https://medium.com/@vikigreen/impact-of-slow-page-load-time-on-website-performance-40d5c9ce568a
+
+################################################################################################################################################
+PROBLEM (specific)
+
+very expensive -
+  - rent always-on machines
+  - pay algolia $1/1000 documents
+  - lots of online complaints about how expensive algolia is (even before prices recently doubled)
+
+OR
+
+very "painful"
+
+  If I had one word to describe the experience, it would be “painful.” Deploying and managing your own Elasticsearch clusters at scale
+takes a lot of time and knowledge to do it properly. Perhaps most importantly, it took my engineers away from doing what they do
+best—innovating and producing solutions for our customers.
+https://aws.amazon.com/blogs/big-data/moving-to-managed-the-case-for-amazon-elasticsearch-service/
+
+
+
+################################################################################################################################################
+SOLUTION
+
+worp is 200 too 1000 times cheaper to operate than algolia costs
+
+
+################################################################################################################################################
+TOTAL ADDRESSABLE MARKET
+
+yearly revenue from companies selling search-as-a-service or tools directly based on it (logging)
+$45   M - algolia
+$466  M - elastic.co
+$2000 M - splunk
+$360  M - datadog
+$116  M - papertrail
+$10   M - loggly
+?????   - aws elasticsearch
+
+--------
+$3.0 B
+
+https://www.owler.com/company/elastic
+https://blog.getlatka.com/how-much-revenue-is-algolia-doing-and-whats-their-valuation/
+https://www.geekwire.com/2015/bootstrapper-success-story-seattle-startup-papertrail-sells-to-solarwinds-for-41m-in-cash/#:~:text=The%20company%20today%20announced%20financial,the%20same%20period%20last%20year.
+
+
+
+
+################################################################################################################################################
+SERVICEABLE AVAILABLE MARKET
+
+from:
+
+$45  M - algolia's yearly revenue ()
+$45  M - aws elasticsearch (basic search functionality only)
+$45  M - elastic.co (basic search functionality only)
+-------
+$135 M         / 5 = $27 M  (cos worp 5x cheaper ? how to account for this? maybe revenue is 10x less, but if costs are 100x less...? how does that affect TAM/SAM (it doesn't?))
+
+to:
+
+$45   M - algolia's yearly revenue ()
+$100  M - aws elasticsearch (basic search functionality only)
+$100  M - elastic.co (basic search functionality only)
+$20   M - ppl who are self-hosting elasticsearch now
+-------
+$265 M        (without worp discount adjustment)
+
+https://stackshare.io/stackups/algolia-vs-elasticsearch
+
+(note: algolia total funding: $184 M.  current valuation: $578 M )
+https://www.bizjournals.com/sanfrancisco/news/2019/10/15/fast-growing-san-francisco-search-company-scores.html
+
+################################################################################################################################################
+GO TO MARKET STRATEGY
+
+attract free users to test and advertise the product while we continue adding features.  the paid version will be unattractively expensive during this period.
+once we have feature parity with algolia, as well as a turnkey algolia migration tool, start dramatically lowering prices.  to 5x less or 10x less.
+
+
+2 worp demos:
+
+1. FEATURE-RICH DEMO
+retailer. products with different fields/attributes (search/sort by price, color, etc)
+
+1. MASSIVE DEMO
+build a worp demo that is initially all of wikipedia, then gradually add documents until it's a full internet search option.
+
+
+VERSION 1 --- no revenue
+
+- free version:  better than algolia (more documents and requests)
+- paid version:  worse than algolia and expensive
+
+VERSION 2 --- little revenue
+
+- still expensive paid plan
+- default global distribution for paid and free
+
+VERSION 3
+
+- turnkey migration from algolia
+
+VERSION 4 --- some revenue
+
+- enterprise features: encryption at rest
+
+VERSION 5 --- much more revenue
+
+- start lowering prices dramatically to poach all aloglia users and attract elasticsearch users
+
+
+################################################################################################################################################
+PRICING
+
+eventually (version 4+)
+
+5x or 10x cheaper than algolia
+
+100,000 requests/  $1
+ 10,000 documents/ $1
+
+
+$/index size (gb)
+$/search request
+$/update request
+$/num documents
+
+https://www.slant.co/versus/569/23459/~elastic-cloud_vs_aws-elasticsearch
+
+
+
+################################################################################################################################################
+TEAM
+
+me
+hipster hacker hustler
+https://mitsloan.mit.edu/ideas-made-to-matter/2-founders-are-not-always-better-1
+
+################################################################################################################################################
+ASSUMPTIONS
+
+- i can do the rest of the critical search features within 20 ms or so
+
+################################################################################################################################################
+RISKS
+
+- i'm wrong about being able to do a full algolia-quality search tool like this
+- algolia or google or azure or aws or elastic.co realizes that they dont need RAM for fast search, and releases a 100x cheaper search tool before me.
+
+################################################################################################################################################
+TIMELINESS
+
+Algolia recently ~doubled their prices.  Now is a great time to provide a more affordable alternative.
+
+################################################################################################################################################
+ROADMAP
+
+- match highlighting
+- phrase matching
+- proximity matching
+- custom sorting
+- multiple indexes per record
+- fuzzy matching: Damerau–Levenshtein
+- isolated indexing service
+- automated infrastructure balancing
+- build worp website to display/search/edit/configure a worp index
+- payments
+- dedicated type-ahead service
+- at rest encryption
+
+
+################################################################################################################################################
+FUTURE
+
+expand into
+
+IT SOLUTIONS
+- logging
+- system monitoring
+
+RETAILER SOLUTIONS
+- AI/ML search recommendations
+- AI/ML search predictions
+
+INTERNET SEARCH ENGINE
+- marketed as:
+    - faster than google
+    - safer than duckduckgo
+      - (...how? cos now buying bing searches, so bing isn't implicity tracking?)
+      - dont store searches in history
+      - find some duckduckgo flaw
+
+130 trillion indexed websites by google
+cost me $130M/mo
+google spends $130M/day (on other stuff too)
+
+google search costs $30B/quarter?
+
+
+################################################################################################################################################
+################################################################################################################################################
+############################################################# QUESTIONS ########################################################################
+################################################################################################################################################
+################################################################################################################################################
+
+- bulid full algolia competitor before releasing?  or release partial tool to make a little revenue first, to get funding at better rates
+
+- how to get revenue without alerting to algolia that they're doomed.
+
+- how to grow while keeping technology secret
+
+- any role for patents? (i think: no)
+
+- initially i was thinking i'd build most of it myself.  but then working w/ ross utah and AU Landing spot, was thinkng about getting funding instead to grow faster.
+    but after reading more about funding,   david gardner's advice ... impossible/stupid to try to get funding before revenue ? so now back to building myself ?
+    - so mainly wanted to start getting advice from seasoned pros instead of continuing to make up stuff on my own
+
+- general, ie "what should i do now, next?"
+
+
+
+
+
+
+
+
+################################################################################################################################################
+################################################################################################################################################
+WHAT JOE SAID:
+
+------------------------------------------------------------------------------
+
+whats most important to the customer
+- built in integrations shopify, magento
+    -
+
+
+mailchimp profiled customers' risk -- assessed risk easily on scale
+
+
+-------------------------------------------------------------------------------------------
+
+need good differentiators
+
+built in integration?
+
+
+chat things built into web integrations.
+
+make experience so seamless and frictionless
+
+
+how do u service SOME part of the market REALLY good
+
+- tap into an existing integration somehow
+
+doesnt take much to be a big deal for me, and a rounding error for them.
+
+play good but neglected markets.
+
+get traction in something.  more important than getting it all figured it out.  not gonna see the opportunities unless being actively used.
+
+but gotta get started.
+
+and not get too hung up on monetization.
+
+anything lead gen - getting users
+
+tap into SHIFTS
+
+questions 0 "coud someone have made your business 5 years ago?"
+
+think from CUSTOMER perspective.  top down perspecitve?
+
+forget about competitors.  number 1 thing is customer.
+
+traction has to be users.
+
+
+
+-------------------------------------------------------
+
+better to start with something v small.

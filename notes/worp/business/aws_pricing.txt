@@ -1,0 +1,9 @@
+https://cloudsoft.io/the-ultimate-guide-to-aws-t3-instances-pricing/
+
+^ cost of cpu-maxed t3.nano
+
+lambda - 8x cost of doing yourself?
+https://einaregilsson.com/serverless-15-percent-slower-and-eight-times-more-expensive/
+
+how compare worp pricing to aws elasticsearch
+https://aws.amazon.com/blogs/database/get-started-with-amazon-elasticsearch-service-how-many-data-instances-do-i-need/

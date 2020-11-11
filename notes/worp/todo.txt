@@ -1,0 +1,129 @@
+
+
+---------------------------------------------------------------
+april 18 2020
+
+- define which items are permament/stable/
+    - capitol
+    - what ddb tables???? any???? or capitol create as needed?
+        - only misc table (the one that holds capitol?)
+        - capitol starts EVERYTHING. creates its own ddb table to write itself to.
+        - this way it's easy to spin up new ENVIRONMENTS! worp DEV, STAGE, IMPLEMENT, PROD, etc 
+        - just deploy the capitol virtual machine (with packer, terraform?) and it does all the rest as needed. 
+
+---------------------------------------------------------------
+
+
+
+
+definitions:
+position: relative to other indexes [the, quick, brown, fox]: [0, 1, 2, 3]
+location: character addresses in the full text [the quick]: [0, 4]
+
+- parse input document into:   
+    - list per token of:  Invind and linked position arrays
+        - invind:  {docId (3 bytes), relevance (2 bytes)}, ... (sorted)
+        - positions per docId: [{invind docId implicit index (3 bytes), position index(3 bytes)}...]+[{position-in-document(2 bytes)}]
+            - for phrase matching (or other search enhancements?)
+    - starting locations per token 
+        - serialized dictionary.  key: token (str), value: list of first-character locations (u16)
+            - for highlighting matches.  can be stored direcly as bytes if needed for performance.
+        - assume stop location by len of token.
+    - start&stop locations per irregular token 
+        - things like "wont" that match with "won't" as well as "wont"
+        - need pair per location: {start, stop}
+        - so per token, first check if its in this Irregular Tokens Locations Map.
+    - how? 
+    - split document into tokens
+    - for each token,
+        - count occurrences,
+        - find positions (ie position in list of tokens)
+        ---> calculate relevance, create arrays ^^
+    - generate prefix tokens 
+        - same way?
+        - DO NOT NEED POSITION DATA - cos wont be used in phrase match (inside quotes)
+        - do need location data ... just starting location right? yeah ... 
+            - if highlighted section contains an apostrophe, just extend the highlighting by 1 char. 
+
+algolia tokenizing:
+    $#+ algolia does something weird with these
+    .'- and these
+
+
+TOKENIZE:
+- Document
+    how to split:
+
+    1.  split-delete all punctuation and spaces EXCEPT apostrophe and $#+
+    2.  split-keep $#+ (all currency symbols)
+    3.  word contains no numbers?   
+            1. remove apostrophes
+            2. add to dictionary k:NO_APOSTROPHE, v:WITH_APOSTROPHE
+    4.  word contains numbers?
+            split-delete 
+
+    [']   if word contains a number, treat it like a space
+            else, delete 
+            - or just always delete?  idk why algolia's weird here 
+
+    $#+ algolia does something weird with these
+        worp:
+            split_keep.  if side-by-side, treat as if surrounded by quotes. 
+- Query
+    handle exclusion symbol " -"
+    [.]     split-delete - in queries, treat internal periods as a space with surrounding words surrounded by "
+    [$#+]   split_keep.  if side-by-side, treat as if surrounded by quotes. (eg "#deleteFacebook")
+
+
+
+for each Document:
+    - get Set of TokenDocObjs: {cookedToken, rawToken, docId, [positions], [locations], count, relevance}
+        - where "token" would be "wont", and rawToken owuld be "won't"
+    - so 
+        - get positioned LIST of tokens (use rawtokens)
+        - record their POSITIONS  (use cookedToken?)
+            - in TokenDocObjs
+        - search for rawtokens in doc to find their LOCATIONS.
+            - what about "wont" from "won't" ??? 
+        - then what ???
+
+
+too many files in 1 dir is bad for filesystem performance!
+https://stackoverflow.com/questions/2994544/how-many-files-in-a-directory-is-too-many-on-windows-and-linux?rq=1
+max 3000 ?
+
+TODO:
+    - speed up indexing?  how to modify internal collection w/out copying?
+    - dont do indexing entirely in memory.  save to files sometimes
+    - use sqlite for small objects
+    - no, use rocksdb.  lots of small files, easier for github - data version control.  
+        - i wonder if any other global databases use git for version control.... 
+        - maybe use rocksdb for everything.  prob just small stuff.  if object is over 4kb, we know its in its own file. 
+        - if db scatterred among small files, maybe we dont have to convert binary to strings for diff/github
+            - maybe just store copies of entire files, and delete history more than an hour old or something. 
+        - rocksdb might be as fast as file system cos just storing byte arrays ... 
+
+    - use rocksdb 
+    - test with big documents (10kB? 5 kB?)
+    - implement sharding.  shard-as-you-parse 
+        - bulk indexing *could* be split among multiple machines. 
+
+
+
+
+TODO:
+    if token not recognized:
+        1.  check fuzzy spelling 
+        2.  check if it's two tokens combined
+
+
+feb 8 2020
+
+    x    TODO: update this to generate docs per "shard" iteration.  so we can get an index with 10 million reasonable iszed docs, like 5kb each. 
+    x    generate docs from random numbers under 160,000 converted to strings.  and the docId separated by commas. 
+    x    and split that up over 100 shards maybe 
+
+    x    also - try putting data in github, and then try adding a new doc to the index. 
+    x    TODO - update index with single doc. 
+    
+    run queries over ec2 clusters .... 

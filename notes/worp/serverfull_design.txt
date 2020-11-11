@@ -1,0 +1,1200 @@
+
+
+SERVER ACTIONS
+
+- input q
+- tokenize
+- input tokens not in indexed tokens?
+    - levenshtein
+- get I.I. per token --- from local database (postgres? mysql? sqlite? cassandra? (has smallint))
+    - II contains:
+        - docId (ordered and compressed (diffs)), count*, lowfi relevance**
+        - using small int type, like smallint
+- custom set intersection code using cython
+    - keep the relevance values with the docIds.
+- do lowfi relevance sort (if requested)
+- for top n% of matches, get sortable and filterable values from redis or something
+    - or from python variables?
+    - redis probably better? what's latency? ttfb local redis?
+- do low-fi sorting
+    - keep top n%
+- do hi-fi sorting
+
+*count - literal count not stored? some compressed value? log? count/10? /100?
+*lowfi relevance -
+
+redis only stores strings.... convert int array to string?
+mysql in memory?  part in mem, part on disc????
+
+in mem:
+- docId-metadata (sortables, filterables)
+    - one value object per doc ... could be 10,000,000 objects?
+        - store in numpy array?
+        - locate with binary search of address values list?
+    - maybe i should use redis?
+    - no redis is too slow, using connection too slow.
+    - just use array with docId as array index
+
+on disc:
+- II
+- original documents
+- updated architecture design given performance test results:
+    - II can be stored on disk as long as length < 25k docs
+    - separate objects for <token>II: docs, counts, relevance
+        - counts and relevance are arrays - index corresponds to index of doc in docs array
+            - note that docs are compressed/diffed in docs array!  keep track of actual index during intersection algo!
+
+
+
+TODO -
+- determine most memory-efficient in-memory key-value stores
+- this is just for docId-metadata
+
+python takes 10 ms to fetch 50 items ... way too slow.
+java vs c++ ? https://benchmarksgame-team.pages.debian.net/benchmarksgame/fastest/java-gpp.html
+java 10x slower, 10x+ more memory :(
+have to use c++ (or rust or ...)
+c vs c++? c++http://deathbytape.com/articles/2015/01/30/c-vs-c-performance.html
+i think i should use c++
+... we could use python for tokenize and levenshtein ...
+... no if we're using c++ we should use it for tokenize too during document import
+... just use rust/python for levenshtein (skip levenshtein for now... just use microservice later if not c++)
+... then ... back in c++ ...
+    - fetch the II's from db (which one? doesn't matter?  from disc.) <-- postgres
+        - best db for storing arrays of numbers?
+            - postgres!
+            - not possible in mysql wtf! https://stackoverflow.com/questions/5541175/is-there-any-array-data-type-in-mysql-like-in-postgresql
+        - postgres: array of 1-byte chars?
+        - store array as single binary value? - no use 1-byte unsigned 'char' value in c++ and postgres.
+    - get intersection of the multiple sets of docIds from II.
+        - II array is not just docIds tho ... it's like [docId, count, lowfi_rel, ...]
+        - but it's actually more complicated cos it's compressed values:
+            - arithmetic flags:  do this action for all subsequent actions until END_ARITHMETIC
+            - 0: ADD
+            - 255: MULTIPLY
+            - 254: SUBTRACT
+            - 253: END_ARITHMETIC
+        - but use only 1 8-bit value per 'count' and 'lowfi_rel'
+    - IF SORTING BY RELEVANCE:
+        - multiply resulting lowfi_rel values, pick out the top picks for 1st page of results?  or handle sorting ... how ... TODO
+        - ^ so for "giant squid" query, we'll get final set of docIds for docs that contain both 'squid' and 'giant'
+            - for each doc, generate a new relevance value = squid_relevance * giant_relevance
+            - pick out the top 2 or 3 "buckets" of values.  quintiles? top 10%, 10-20%?
+                - if top block is too big or too small, give it another round to adjust
+                - split into 10 buckets grouped by size and keep track of the size of each? or 5 buckets?
+                - O(n)
+    - IF SORTING BY something OTHER THAN relevance:
+        - how to get sortable value per document?  could be 10,000,000+ documents ...
+        - use single arrays.  these work for up to 4 gb each or 2 gb????
+        - docId = array index + 1 --- unless there are too many docs, and then split into 2 or 3 groups etc
+            - if doc is deleted, keep list of deleted docs.  to re-use that docId.  write to disc. unused docIds within current docIds range
+                - write newly-reused docIds to in-memory list. (to avoid reusing dup simultaneously)
+                    - also pick random
+                    - if unused docIds list is less than n, just ignore it to avoid conflicts? n = 10, 100, 1000?
+                    - or just pick whatever and then check to make sure it's still not in the newly-reused docIds list.
+    - use c++ map object to sort for real, with wahterver sortable values.
+    - now we have sorted list of docIds ... what next
+    - build json response for first page of responses.
+        - get each document from database
+        - highlight token instances, build exerpt response
+        - gather requested document bits (per field requested in request)
+        - return json.
+        - save result to disk/cache in case user wants to sort or filter etc
+            - save exact response as postgres json
+            - save docIds as postgres array
+            - delete old records? use cron job.  put a timestamp with cache values.
+
+
+
+how to handle multiple customers on a single machine?
+server endpoint for: load-index, and remove-index, and /get-index-availability
+
+/load-index
+- loads II to db
+- loads docId-metadata arrays
+
+/remove-index
+- remove II from db
+- remove docId-metadata arrays
+
+/get-index-availability
+- determine total memory used and available (command line stuff)
+- determine memory used by docId-metadata arrays
+- subtract or whatever
+- ebs space? change whenever? https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-modify-volume.html
+    - so only in-memory space matters?
+    - how much in-memory needed per db size postgres?
+
+TODO
+x learn c++
+x start c++ server
+x how to include asdf.h file from external cpp project? --> give up. just write in crow.
+x write set intersection algorithm
+x write multi-set intersection algo simple stupid version
+
+x learn rust
+x start rust server
+x write rust set intersection algorithm
+x write multi-set rust intersection algo simple stupid version
+
+x learn postgresql
+x connect rust and postgres
+x write integer arrays from rust to postgresql
+x read and write 10M integers array to postgres from rust
+
+
+- multithreaded intersection? rust
+    - i think this will cut down time by about half.  good enough? worth it?
+    - later. fast enough without.
+
+x BUDGET - seems promising
+
+x make detailed budget $$
+    - permanent saved like w/ spreadsheets etc
+x determine max number of records using compression on single thread (1M: 14ms comp duo)
+x make compressed intersection algo
+
+
+x read obj: deterine max obj size to: store in file, sled, vs postgres. 3 things!
+    - 0. 100_000_000 postgres 395, file 81 ms
+    - 1. 10_000_000  postgres 42ms, file 4ms. 10x? 20ms - 40ms. 10xParallel? 13ms - 113 ms D:
+    - 2. 1_000_000:  postgres 6ms (30 cold),  file 688 us (3ms cold)
+    - 3. sled: very slow.  1+ seconds
+    --- readTest_file_postgres_sled.rs
+    - note:  there seems to be slight benefit to opening many files at once vs 1.
+    - using parallel always is prob good idea.  who cares if its occasionally slow. almost 4x faster when fast.
+            - it is VERY unclear what causes parallel reads to slow down ... tried opening lots of files, CPU, memory...
+    - rocksdb
+        - 1mb object - 2-3 ms  -- file read: 0.8 ms
+        - 4 kb object: 140.305 µs
+        - storage overhead appears to be nothing?
+        - takes about 2x or same amount time to open as cold file system.
+        - so use rocksdb as directory
+        - to use in AWS:
+            sudo yum install clang
+            compiles in t3.2xlarge in stable rust, NOT nnightly (runs outof memory)
+        TODO
+            x must do heavy load multi-object read in rocksdb vs file system
+                /* read from rocksdb - single thread*/ ---  20 500kb files, 11.8 ms cold, 7.4 ms hot
+                /* read from rocksdb - parallel */     ---  20 500kb files, 3 ms cold, 2.6 ms hot
+                /* read from files  */                 ---  20 500kb files, 11 ms cold, 1 ms hot
+                /* read from files - parallel */       ---  20 500kb files, 4 ms cold, 1.5 ms hot
+                - using 1MB files stuff took about twice as long.
+                - rocksdb is weirdly faster than files??????? (cold rocks vs cold files obv)
+                - cold rocks is over 25% faster than cold files.
+            x now ... implement rocksdb in tokenizer and query_tester
+            - shard while tokenizing.  tokenize in chunks of N documents.
+                use 1 rocks db connection.
+                include shard number in key
+                parse N docs and then write those invinds etc to rocksdb
+                - during search?
+                    - first, for index, read metadata to get number of shards
+                    - query each shard completely separately (docIds dont overlap! :) )
+                    - take top results from each shard, combine.
+                    - update multiIiIntersection to only return top buckets (numPErPage * 3 ?)
+
+
+
+
+x intersection: deterine max obj size to for intersection:
+    - 100_000_000   compressed 1.5 s     normal 1.3 s
+    - 10_000_000    compressed 150 ms,   normal 130 ms
+    - 5_000_000     compressed 72 ms     normal 64
+    - 1_000_000     compressed 15 ms,    normal 13 ms (8 ms in parallel... not much better :/)
+    --- intersection_comprs_vs_normal_research.rs
+    - following values including relevance stores.  3byte ints. not saving with array buffer.
+    - 15M limit - 6 random vecs: 472 ms (single thread) - so expect 210 in parallel (4 vecs, 420 ms)
+    - 1M limit  - 6 random vecs: 17 ms (single thread) - 4 vecs: 20 ms
+    - 5M limit  - 6 random vecs: 128 ms (single thread) (4 vecs, 108 ms)
+
+x intersection 5 sets full len - single thread - no buffering
+    - 1M - 27 ms
+    - 2M - 50 ms
+    - 5M - 112 ms
+    - 10M- 147 ms
+    ----- so - i think IIs (relevanced docIds byte arrays) should be stored in 1M - 2M chunks
+            - metadata per file: min, max, len
+            - prob 1M chunks cos some intersections will need multiple chunks per token for
+                overlapping ranges for complete intersection analysis.
+            - 1M elements = 5 MB file size
+
+x read file AND get intersection:
+    - following values including relevance stores.  not using ar buffer.  3byte ints
+    - 1M - 30ms - single thread - 4 large vecs  (parallel: 42 vs 30)
+    - 2M - 90ms     ''              ''
+    - 5M - 260ms- single thread - 4 large vecs  (parallel: 190 vs 140)
+    - 15M- 980ms- single thread - 4 large vecs
+    --- doing stuff in parallel is more like 30% savings than cutting in half. and only if big
+
+x implement buffered intersectionVector writes
+    - didn't help :/
+x fix relevance normalization
+x save output bucket vectors to struct to pass back to function callee.
+x handle new Buckets obj in callee
+x implement parallel file reads (two threads only)
+x implement parallel intersection (two threads only)
+x implement post-intersection topbuckets sort
+x implement alternate sorting
+    - sortables must live in memory.  4MB for 2M records.
+    - generate sortable array
+    - different sortables need different byte sizes.
+    - how to adjust tuples' sorter bytes? inefficient? trivial?
+    - note: bucket-sorting during intersection is 10+% faster for alternate sorting than doing after
+    x implement flexible alternate sorting both in-intersection and after
+- implement generic types for alt sort. ????? u16 vs u32 vs u64 vs struct???
+- fetch original docs, highlight syntax
+    - how to get token locations?  postgres or mongodb- grab 40 single indexed items - should be very quick
+- implement filters (token with no relevance)
+- implement multiple search fields per document
+    - index per field
+    - intersect indexes separately
+    - take UNION of intersected sets
+    - ADD relevances among diff indexes to sort
+- implement sharded IIs to support large indexes (up to 15M)
+    - max size 1M docIds = 5MB
+- LATER
+    - implement 4-byte integer with max # records = 4 Billion.
+        - prob just keep same 1M-element shards for consistency? (now 6 MB)
+    -
+
+- aws testing
+    - install nightly rust:
+        ~~ use aws ami ~~
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+        rustup default nightly
+        sudo yum -y install gcc
+        sudo yum install git -y
+        sudo apt install git
+        git clone https://gitlab.com/WorpHQ/dev/worp-rust.git
+        git clone https://github.com/stuartcrobinson/rust-hyper-demo.git
+        cd worp-rust
+        #"error: linker `cc` not found" ?  https://stackoverflow.com/questions/52445961/how-do-i-fix-the-rust-error-linker-cc-not-found-for-debian-on-windows-10
+        #ami/CentOS
+        sudo yum -y install gcc
+        #ubuntu
+        sudo apt install build-essential
+        rustup self update
+        rustup update
+        rustup self uninstall
+        then re-installed rust-up
+        rustup install nightly-msvc
+    sudo amazon-linux-extras install rust1 -y
+    -https://www.reddit.com/r/rust/comments/82slu0/how_do_i_run_sudo_cargo/
+    - ip has to be 0.0.0.0:80
+    - finally got rust server working from ec2 - fastest response time is 42ms - 70ms :(
+            - how does algolia etc do it???
+    - websockets
+        - open socket whenever search field is active.  close after timeout or when browser is closed.
+        - no need to check if ws is still open - if ws fails, just do http connection and then keep ws open
+            - customer can set how often to ping?  maybe some uses would have same search field up for long time
+                - NAT router/gateway might disconnect connection after 5+ minutes of no activity? https://stackoverflow.com/a/26368806/8870055
+        - i think using websockets will take about 7 ms off of each query time.
+        - also, an idle ws connection should cost "a few hundred bytes"
+        - latency problem:  often very fast, but randomly, extra 200+ ms??? wtf
+            - solution - run every query twice?  and keep the fastest one?
+            - a1.metal seems to be even worse than t3.xlarge!
+        - t3.nano is MUCH SLOWER than t3.xlarge for websocket :( -- randomly adds 200 ms :/
+        - it's slightly slower for http.  prob extra 15 ms :/
+        - what about other websocket servers?
+            - https://github.com/dpallot/simple-websocket-server python
+            - consistently 40 ms round trip echos for t3.nano AND t3.xlarge
+        - http
+            - about 7 ms slower on t3.nano vs t3.xlarge
+        - websocket
+            - now t3.xlarge is the slow one!!! by hundreds of milliseconds!  and t3.nano is reliably fast.
+            - maybe it's ranodm!!!! or specific to instance?  location in aws???
+            - maybe we should open and close ec2 instances until we find a fast one???
+            - maybe some subregions faster than others?? no they're all in us-east-1a (all the t3nanos)
+            - TODO test ws with method other than "socketwrench" ...
+                .... - i think socketwrench was the problem.... everything seems v consistent using chrome-extension://pfdhoblngboilpfeibdedpjgfnlcodoo/index.html
+            - really not sure if websockets any faster than http ... which doesn't make sense but ... ????
+                - SURELY websockets are faster ... i mean they simply MUST...
+                - plan to use WS.  doens't matter.  so what's next ...
+            - WS might not be *that* useful from laptop to server, but might be useful from ec2 to ec2.
+                - how to do parallel computing between ec2???
+            - https://www.iucc.ac.il/en/blog/best-practices-for-running-hpc-on-aws/
+                - disable hyperthreading?
+                - amazon fsx for lustre? https://www.iucc.ac.il/en/blog/best-practices-for-running-hpc-on-aws/
+            - takes 1 to 6 ms between ec2 instances
+                - is there a better way?  maybe not?  have to expect 5 ms latency between instances??? better than 10 :/
+
+    x efs? - substantially slower than ebs
+    - run worp.ws and worp.hyper on same ec2, test with websocat on mac
+    x use command line args for executable - for diff server/usage versions
+
+    x rust prod vs dev
+        x see if intersection+file_read any faster with optimized build???
+        x omg cargo build --release makes file read/intersection times like twice as fast!!!!!!
+
+    - WHATS NEXT .... ???????
+        - how to communicate - probably websocket binary
+        - how to run hyper AND websocket from same application in diff threads?
+            - why? idk ... between ec2 instances? not necessary i dont think
+        - DO PARALLEL MACHINES STUFF
+            - start all the minions
+
+                - how to manage fleet of ec2 ????
+                    - terraform?
+                    - aws command?
+                    - they all just need git for reading updates.
+                        - use 1 application.  run with args
+            - master: setup:
+                - input list of minion urls (ip/port websocket)
+
+                - take full Invind, break it into chunks of MAXLEN and MINUNIT (that's by bytes or docIds? MINUNIT is 5 for 3byte int, 2byte)
+                    - equal sized chunks -- each minion should take same amount of time
+
+                - distribute them to minion nodes
+
+                    - use websockets
+                    - store in files for now OR MEMORY - master dictates
+                - make an inventory list: token's chunk min, max, len, location (file, db, memory?)
+                    - intenvory: vector of struct objects - in memory
+            - master: execution:
+                - get a list of tokens
+                - get locations for each token's chunks
+                - issue intersection requests among minions for full coverage
+
+                - receive intersections (bucketed)
+                - sort, return
+        - check latency for opening/intersection "105 10" on 54.85.46.75 later.  last ran at 9 pm, 2 ms.  1000's opened at 9:30
+            - check these tomorrow
+            - see how long the file cache lasts.  if "100 10" takes 40 ms we'll have to put everything in memory...
+        - RESULT: after 1 hour:
+            - 100 10 - 40 ms
+            - 100 10 pf - 23 ms
+            - 200 10 - 40 ms
+            - 200 10 pf - 30 ms <-- so this is the best we can do i think ...
+                - but this is UPPER BOUND.  usually shorter right???
+                - so plus 15 ms for processing ... 85 ms total (40 ms latency)
+            - what type of EBS are we using ... :/ maybe there's faster ??
+            - io1 !!!!!
+            - 100 10 - 27 ms
+            - 100 10 pf - 14 ms
+            - 200 10 - 40 ms
+            - 200 10 pf - 24 ms <-- so this is the best we can do i think ... (closer to 15 ms irl cos first is max 100)
+                - ok stick to SSD plan.  usually 10 or less i think ????
+                - 10 + 5 + 40 + 5 = 60 min
+            - i think we just need to build and test freal, w docs. parameterized infra/usage. (in mem or no, type of ebs)
+            - finished updated budget ... still seems like good idea ...
+        - MANAGE EC2 FLEET????
+            - just make ec2 image and run on 10 diff t3.nanos for 10,000,000 records demo (using max Invind patterned len)
+            - minion: open websocket
+
+                commands:
+                    - accept new Invind chunk to store
+                    - run intersection on chunks
+                - why? to get max execution time.  passing intersected docIds back to Master will take time- measure this. (in sum)
+                - compare using ebs: io1 vs gp2 for everyone.
+                - compare using parallel stuff or not (probably yes for files, no for intersection)
+            - next: implement actual document parsing/indexing
+                - refer to simplified parsing
+                - index tokens, prefixes up to len?
+                - how to bulk index ... keep common tokens' Invinds in memory
+                    - how determine common tokens?
+                    - start by keeping all Invinds in memory, then close the infrequently-used ones .
+                    ALTERNATIVELY
+                    - just store new docIds & relevances in new files
+                        - then go back and insert them in the right places in their real Invind files/chunks
+                    - this seems better than selectively filling up the RAM
+                    - in inventory, store used docId numbers.  need to be nearly-consecutive for close packing in chunks.
+                    - fill up chunk size then make next chunk.  then after doc deleted, go back and reuse docId in respective chunk.
+            - next: how to respond to network traffic?  how to scale?
+                - big different problem.  separate monitoring ec2?  check up on everyone ... replicates per spot closing or traffic spike
+                - update master with minion IPs and chunk spectrum.
+
+                - multiple masters and multiple minion sets per customer
+
+                    - but master and minions shared among multiple customers.
+
+                    - master picks minions randomly for processing.
+
+                    - monitor keeps track of total traffic per worker, per minion, per customer per minion, and per customer total.
+
+
+                        - to distribute load properly.
+                        - so if a customer and a customer's infra is spiking, just replicate that customer
+                        - if some infra is spiking but customers flat, then replicate entire infra.
+                        - if customer spiking, and other infra is quiet, replicate customer to quiet infra instead of making new.
+                        - how to determine this stuff 🤔
+                        - aws CPU metrics?  too laggy ... usage logs?
+                            - maybe each event increments some value in a db? only stores past few minutes?  expensive?
+                            - stable ec2 running keeping tabs on everyone?  deleting data older than a few minutes?
+                                - running redis?
+                                - could be very small
+            - TODO
+                - minion vs kevin (worker vs master)
+                - minion:
+                    - single websocket server - accept and return binary data - start via cmd line args
+                - kevin
+                    - single websocket server - accept query, return page of results - start via cmd line args
+                - make worpexe take arg to start minion
+
+                - make AMI to start worpexe-minion on startup
+
+                - start websocket
+                - 2 commands: (i) save chunk, (ii) intersect chunks --- minions write everything to file.  if chunk too small for file, then master handles it alone
+
+
+PARSING
+    - google splits per camelcase: https://www.google.com/search?sxsrf=ACYBGNR4szShSAHV-WxEnI3xzfSCFKJECg%3A1580513875717&ei=U7o0Xri1K4KCytMP5bicyAU&q=%22for+each%22&oq=%22for+each%22&gs_l=psy-ab.3..0i67l2j0i131i67j0i10i67l2j0i67l2j0i131i67j0j0i67.3246.3695..9513...0.2..0.184.274.1j1......0....1..gws-wiz.......0i71.TP9Vy9v3erg&ved=0ahUKEwj4qv-Aga_nAhUCgXIEHWUcB1kQ4dUDCAs&uact=5
+
+PHRASE MATCHING
+    - deliberated over storing Invind with positional data vs indexing ordered token pairs.
+        - do ordered token pairs, store in sqlite db.
+            - why ordered pairs instead of normal Invinds with location data?
+                - should be faster
+                - need separate forward-index-style lists for location data anyway
+                - store OPairs Invinds per First word ... wait ... how ... how to encode 2nd word... ???
+                    - idk, as bytes.  1 byte for word byte length, then word, then normal Invind u8 array.
+                    - shard by alphabetical distrubution of 2nd word.
+                    - kevin keeps inventory of these too. knows where appropriate shard is per query.
+        - use sqlite for everything based on READS, which queries should be.
+            - minions: small Invinds (prefixes, orderedPairs, fullWords)
+            - kevin: has to keep inventory of all shards and minions ... 100,000+ rows ...
+                    - also store all Invinds ... or do minions fetch directly from source???
+                - how often write?  when scaling/balancing minions,
+                - maybe kev uses sqlite too????
+                    - yeah ... only 1 write at a time. !!!!
+    - convert sqlite data files to text to store in github???????
+        - and Invinds?
+        - use a separate sqlite db per customer????  each w/ own github repo ... git convert to/from some text form ... hex?
+            - use git attribute so github can parse binary Invinds as text https://git-scm.com/book/en/v2/Customizing-Git-Git-Attributes
+                - read as base64 or something.
+
+UPDATING/INDEXING
+    - irl, handled by different system.  updates indexes externally, then uploads to git, then messages all kevins who message their minions to update appropriately.
+    - repo per customer ?  github is fine since not using LFS.  75 GB max? 10GB for gitlab.  100 MB max file -
+        - 100 MB max file ... fine except sqlite file might be bigger...
+            - yeah ... problem for sqlite ... max "attached dbs" is 62 https://stackoverflow.com/questions/9410011/multiple-files-for-a-single-sqlite-database
+                - so 6.2 GB per sqlite database, maximum efficient file splits
+                - kevin knows which db per which sqlite connection to find a given token (full, pre, pair)
+                --- question ... opairs grouped by 2nd pair for efficient file storage ...
+                --- store all Invinds like that?  store "apple, applause, app" in the same array potentially?
+                        - kevin would know the index for each token within parent array ???
+                            - no that would be ton of data for kevin.  potentially index per token and pair?
+                            - no. what if... instead of array per token, we have ... array per alphabet distribution shard
+                            - keep list of these shards to know where to find any given token Invind....
+                            - then dont need sqlite at all ....
+                            - cost:  store token length per token in array. 2 bytes.  smallest possible overhead...
+                                    - time cost to find token in array... minimal... small files. iterate through tokens, reading word lengths and jumping
+                                        - not reading every byte.
+                                        - for 4kB file, each tok only in 1 docId, max # steps to find token is:
+                                            4000/(2 +5 + 3 + 2) = 333
+                                            - but actually it's 1/2 that, cos if token toward end of alpha spectrum, then start at the end.
+                                            - max steps is 150.  times 0.42ns = 63 ns.  plus some for addition.
+                            - benefit: more predictable performance.
+                                        - uniform file sizes
+                                        - very easy on github
+                                        - probably faster than sqlite??
+                - so what does kevin know?
+                    - needs to know all the files and their format and spectrum.
+                    - a good use for SQLITE?  no way this would > 100 MB ... with all 16kB files, that's 80 GB
+                            - can do much bigger than 16kB with fast reads i think.  i think 10 100kb files open in 6 seconds?? cold
+                                - 480 GB.... this should handle customer with 20 million records.  easy 16 M.
+TODO -
+    - check data transfer times between ec2 machines over websocket.
+        - this is the last piece of the puzzle.
+        - how long does it take to transfer an Invind of 1,000 docIds?  10k? 100k? (this should be max since max shard size is for 100k docIds).
+        - WEBSOCKET CLIENT
+
+
+- chunking
+    - how to run multiple rust files in same project ?
+    - master
+        - writing
+            - read/gen Invind of length len,
+            - split evenly into chunks of chunkLen < 100000
+            - send chunk to respective microservice
+            - fixed docId range per microprocess
+                microservice
+                    - save chunk to file
+        - processing
+            - issue parallel commands to all microservices
+                - read and get intersection of appropriate Invind withinits range
+
+
+
+https://www.reddit.com/r/rust/comments/df64fg/unable_to_install_rust_on_ubuntu_16046_lts_no/ ?
+
+        curl -s https://static.rust-lang.org/rustup.sh | sh -s -- --channel=nightly
+    - install nightly rust:
+
+    - t3a.nano is MUCH slower than t3.nano - more than 10% slower (cost savings)
+    - t2.nano 10%-20% slower than t3.nano
+    - len: 200_000, 6 files: 10 ms, 12 ms (t2, t3 nano)
+    - ^ let 200k be the largest II chunk length (200k docIds)
+        - so does that mean acutaly 100k?  cos minions will need to do extra to ensure coverage
+
+    - parallel slowed down for file reading and intersections.
+    - t2 and t3 are really the same
+        - t3nano 5% cheaper than t2nano???
+    - when index len < 300, intersect in master.  len > 300? send to minions where they'll be processed
+
+            in chunks of 100k
+        - this should give total processing times between 0 and 15 and 35 ms (for 200k+ ids)
+    - sudo amazon-linux-extras install rust1
+
+- server testing
+    - hyper seems to be faster than actix-web.  H gets to 2 ms, max 8?  AW between 3 and 15 ms. (5% is 15ms)
+
+
+    - RUST INFRA PERFORMANCE TESTING
+        - for values in top buckets, convert them to 64bit ints.
+        - use the leftmost bits for the sortable value.  use the other side for the actual docId
+        - compare these sorting bits to sort freal.
+        - or make object?  yeah use structs.  slower but smaller.  lists should be short anyway.
+        ----
+        - addition: 0.3 ns
+        - compare:  0.2 ns  (u32 0.24 ns, u8 0.57, BUT u8 as u32: 0.24 ns )
+        - set a variable:  0.08 ns
+        - accessing u32 array element:  0.42 ns
+        - set value of ARRAY - 0.46 ns          (still several times slower than setting variable) - when set on stack
+        - 1 for loop:       40 ns
+        - 1 while loop:         2.35 ns        - including addition and if statement and comparison
+                                              - since this is 10x slower than other ops, optimal loop is duplicating code abt 10 times per loop.  i tried it and it worked.
+        - 1 function call       2 ns
+        - vec.len()              1.95 ns
+        - if (with conditional) 0.82 ns
+        - vec.push: 19.5 ns (22 ns for v[i] = x !)      - 50x slower than set array value at index. but 5M max length :(
+        - x = vec.get(i)   33 ns
+        - x = vec[i]    22 ns   (read from vec)
+        - vec[i] = x;   22 ns
+        - append array buffers to vec: 0.29-0.51 ns each  (10000 len buffer seems to be ideal)
+        - total cost to write a value to vec using buffers: 0.76 ns  (still 26 times faster than straight to vec)
+        - create u32 from 3 u8 vars: 8 ns    (using from_be_bytes function)
+        - create u32 from 3 u8 vars: 1.5 ns    (using bitwise operations)
+        - 3 u8 as u32 comparisons - 1.6 ns
+        - 3 u8 comparisons - 1.35 ns  to 2.7 ns (depending on whether first value is false for the 3 &&'s)
+            - SO - 3 byte comparisons would be faster than converting to int (twice) AND then comparing
+            - SO - never convert byte array to int32s
+            - but wait ... writing to array is 20 ns ???? converting to int would be faster then ... ONLY for storage
+        - sort 10,000 structs: 0.4 ms to 0.6 ms
+        - create 10,000 structs: 1 ms
+        - ec2 intra-region transfers via hyper rust http:       (everythig up to 100k basically free)
+            - 2             bytes:  2.6 ms
+            - 1000          bytes:  2.6 ms
+            - 10_000        bytes:  2.7 ms
+            - 100_000       bytes:  3.5 ms      <-- probable max (for 100,000 docs/shard)
+            - 1_000_000     bytes:  10  ms      <-- max      max (for 100,000 docs/shard)
+            - 10_000_000    bytes:  30  ms
+
+        - summary most to least expensive:
+            - write to vec
+            - read from vec ?
+            - for loop
+            - while loop
+            - function call (inlined fn call still expensive)
+            - write to array
+            - read from array
+            - if statement
+            - addition
+            - compare
+            - operations on u8 vars
+            - operations on u32 vars
+
+        - now that we know that buffered array writes are pretty fast, we can keep data as u8.  more smaller values to write is fine.
+        -
+
+    - TODO:
+
+    x confirmed my intersection algo is faster than BTreeSet.intersection
+    x does binskip intersection algo work? no D:
+
+    x performance test opening multiple files
+        - in parallel?
+        - result: opening files in parallel is sometimes much faster but sometimes much slower D:
+            - perhaps we can control for reasons for being slower????
+            - seems to be usually a bit faster (1.5x? 2x? 4x?)
+    - multiArrayIntersection - sort while saving intersection
+        - write u8 array (5 bytes per docId (3 for docId, 2 for relevance))
+        - read u8 docIds array
+        - get intersection of 2 arrays.  drag along the relevance value.
+            - binary skip search algo
+        - sort results into buckets as its saved (5 or 10 or 20 diff array-buffered vecs per bucket)
+            - keep track of bucket length, min, max? (relevance)
+        - cull by filters
+            - wait... this should happen during intersections
+            - filters get special docIds array w/o relevance
+        - do real sort of top n buckets (for 1st page results)
+        - save results, be prepared for:
+        - re-sort by different sortable (stored in-memory: vecs/arrays. index = docId)
+            - first pass sort into buckets
+            - second pass do real sort for top buckets
+    - compare tcp vs http servers between ec2s:
+        - https://www.google.com/search?q=rust+start+a+tcp+server&oq=rust+start+a+tcp+server&aqs=chrome..69i57j33.4610j0j7&sourceid=chrome&ie=UTF-8
+
+
+    - BREAKTHROUGH
+        - parallel intersection algos dont have to check dup values!!
+            - break docId arrays into chunks and rememebr their min/max/len
+            - only run intersection algo on matched ranges!!!!
+
+
+
+
+
+great link: https://users.rust-lang.org/t/stack-overflow-when-iterating-over-very-large-collection/14456/10
+benchmarking rust
+
+
+
+
+
+
+no:                    do real rust benchmarking for everything. write perm benchmarking tests.
+
+
+
+
+
+
+do this:         in multiIiIntersection function, try to avoid converting bytes to ints
+                    - make a function to compare the 3 bytes directly using bitwise whatever
+                    - look for other ways to speed up.
+                    - then apply binary skip search
+
+
+
+
+
+
+
+    - sort intersection IN the intersection algo?
+        - while new elements added to intersection. put them in right place
+            - binary tree? linked list or something?
+        - SO, all sortable info must be stored WITH docIds.  bummer for file read times but nbd
+
+- implement biskipi3
+    - read files into u8 vectors
+    - compare byte by byte - no need to convert bytes to int.
+        - what about diff?  how to know how far to skip?
+        - for this we need to subtract xi from yi+1 (assuming xi==yi)
+            - have to combine bytes ONLY RIGHT BEFORE shifting other array index. so not all the time.
+    - store intersections as 3 bytes too.
+
+-->  store arrays in chunks of max 3 MB ?  (20 ??? ms read + intersect)
+        - with permabyte storage, 3 MB = 1,000,000 items
+        - goal: 15M max records
+            - 45,000,000 bytes 36 ms file read, ??? second bSkipin algo
+-->  1B records? split into 500 processes
+
+-- use byte arrays for all values - variably encode docIds as 1, 2, 3, 4, 5... bytes
+        - depending on customer pre-set
+- fast reading (just use byte array)
+- use binary jump search intersection algorithm (knowing that each docId takes n bytes)
+
+x summarize:
+    - obj less than 3 kB? postgres
+    - obj less than 10 mB? file
+    - obj greater than 10 mB? in memory
+    - wait ... 5 MB is max for intersection ...
+        - so indexes should be split into 5 MB files?
+        - loaded parallel for parallel intersection calculation ?
+        - looks like 1M records is our max without parallel.
+        - we need 1M+ for enterprise so ....
+
+- BUILD PARALLEL INTERSECTION ALGO - must go faster
+
+- NEXT: tokenization:
+    - diff tokenization for query vs doc (apostrophe remove query, doc: remove_and_split)
+    - separate index for lemmas or word roots
+    - index prefixes
+    - compress all indexes, just use parallel to speed querying if needed.  cuts cost by half to fourth (less mem but multiplicative savings cos smaller arrays stored on disk instead)
+    -
+
+- refactor the compression and comp-intersection algos
+
+
+notes from last night:
+* use embedded rust db like sled instead of postgres
+* test speed opening file vs reading from postgres
+
+- read this: https://medium.com/@prefixyteam/how-we-built-prefixy-a-scalable-prefix-search-service-for-powering-autocomplete-c20f98e2eff1
+- what about prefix searches?
+    - search for "and a" -- no way it searches for ALL WORDS starting with a!!!??
+    - just index the prefixes duh https://blog.algolia.com/inside-the-algolia-engine-part-2-the-indexing-challenge-of-instant-search/
+- implement tokenizing in rust (simplified version described here i think ^^)
+- implement levenshtein automata in rust?
+    - https://crates.io/crates/fst
+    - https://news.ycombinator.com/item?id=10247289 burntsushi comments 2015
+        - who is this? why is he devoted to fst?
+- build indexer
+    - take a document, tokenize, update the IIs, save doc to db
+    - add token to set of all tokens
+        - do MVP version that does everything incrementally in same place. no batch service.
+- build searcher
+    - check db cache for search query
+    - tokenize search query
+    - if a token isn't in tokens set, do fuzzy search for replacement
+    - check if <tok>docIds array is in memory.
+        - if so, use. if not, fetch from db (must be small)
+    - start running set intersection algorithms on results, keeping track of implicit docId index per array.
+    - meanwhile, fetch the <tok>count_and_relevance arrays (from mem or db depending on size)
+        - use implicit indicies to fetch count and relevance values for all docIds in the final intersection.
+    - fetch metadata for non-relevance sortables if necessary (from memory.  metadata per doc)
+    - bucketize to get group of top matches
+    - do a real sort on the top 1 or 2 buckets.
+    - fetch the first results page (10 items?) of actual documents from db
+    - highlight matching bits.
+    - return
+    - save returned results to cache in db (set TTL!)
+    - save entire intersection to db in case the next page of results is requested
+- build infrastructure
+    - direct IP load balancer (ec2 on demand)
+    - worker monitor/dispatch  (ec2 on demand)
+        - a worker is an ec2 spot instance ($1 - $3 GB-RAM/mo)
+        - if a customer's usage on a given ec2 is getting high, spin up a new one.
+            - add other busy customers as memory allows
+
+
+note - we can use these in-mem vs on-disk threshholds to experiment with having everything in mem (performance vs costs)
+
+
+
+examine:
+https://bitbucket.org/mchaput/whoosh/src/default/README.txt
+
+
+
+- write multi-set intersection algo smart version (no do this later)
+- write multithreaded intersection algorithm  (no do this later.  mvp is 1'000'000 docs max)
+
+
+
+command line args:
+std::env::args
+
+use std::env;
+
+for argument in env::args(){
+    println!("{}", argument);
+}
+
+https://www.concurrencylabs.com/blog/handle-thousands-of-users-with-a-t2-nano/
+https://news.ycombinator.com/item?id=7432619
+https://rust-lang-nursery.github.io/rust-cookbook/database/sqlite.html
+maybe microsoft faster? 204.79.197.200 https://bat.bing.com
+vps speed tests:
+https://www.bitcatcha.com/report/31fd495930e640d7ad67ff4552b0294b/
+https://www.ipage.com/vps-hosting
+https://www.bitcatcha.com/research/vps-hosting/
+
+later:
+    - detect two words missing a space
+
+
+using .gitattributes seems to work for diff binary files?
+https://www.atlassian.com/blog/archives/git-diff
+in .git/config
+[diff "pdfconv"]
+textconv=openssl base64 -in
+
+but idk if it's helping with actual binary database version control ...
+best thing seems to be to force rocksdb to use small files.  will this hurt perofrmace?
+    let mut opts = Options::default();
+    opts.set_num_levels(1);
+    opts.set_target_file_size_base(128 * 1024);
+    opts.create_if_missing(true);
+    // let db = rocksdb::DB::open_default(&rocksPath).unwrap();
+    let db = rocksdb::DB::open(&opts, &rocksPath).unwrap();
+------> you can switch this stuff for pre-existing db.  will change num files.
+then git thinks they're re-writes, going from many to few back to many files.
+so maybe transfer as many files, then during executiong convert to few big files, then switch back to many files for updates?
+
+database version control dbvc:
+- use github orgs
+    - unlimited private repos for $9/mo
+    - unlimited public repos for now for testing
+    - control access per user
+    - use https://github.com/wdbvctestorg for now
+
+TODO
+    x create github api sandbox rust app
+        - (not git command:
+            get repo name for index name and shard number )
+        - create new repo -- must do manually
+        x store full git url in ddb
+        x git pull (stash, overwrite, reset to head, etc)
+        x git push (...overwrite...)
+        x wipe/clear git repo without deleting account
+            - for deleting an index
+    - create dynamodb sandbox rust
+        - create ddb tables with schemas:
+            REPOS_TABLE:
+                repoName, shardId, gitUsername,
+                    - for assigning repos to shards
+                    - for deleting indexes, freeing repos
+                    - repoName is a shortened url, like "github.com/wdbvctestorg/0"
+                    - shardId examples: "indie3:2", "na"
+                    - gitUsername - store this cos diff data could be in diff git accounts, providers
+                        - where is password stored?
+            FERRETS_TABLE:
+                ipAddress, port, cloudProvider, cloudRegion, indexName, isActive, shardName
+                    - to fetch all ferret for a specific index
+                        - later, just get nearby ferrets?
+                        - fetched by Oracle.  (at most 1 per region)
+                    - written to by Chaperone and Overmind(?)
+                        - shit, previously, ferrets were supposed to self-report ...
+                        - who starts/stops ferrets?? overmind?? how many???
+
+            SHARDS:
+                shardId, region, ip
+                    - for knowing what machines to query per index
+                    - multi shards per ip, multi ips per shard
+            MACHINES:
+                ip, details (provider, region, capacity, etc)
+                    - for determining geo per shardId, resource allocation
+            INDEXES:
+                indexName, customerId, numShards, <other>
+        - TODO
+            x create REPOS,
+            x create atomic ddb functions: allocateRepo(repo, shardId), deallocateRepo(repo)
+            x create functions: getRepo(shardId)
+            - store shard's repo in memory. mut static
+            - manipulate ddb via rust
+
+        - notes on dynamodb GSI global secondary index
+            - secondary index must have value to be searched
+            - primary key and sort key cannot be changed
+            - for GSI, you search the newly-created "[Index]", rather than the "table"
+
+
+        - add to index
+    - updates:
+        - you can't make new repos on the fly.
+        - must create lots of repos in advance
+        - how to keep inventory?
+            - need ACID cloud db
+            - dynamodb transformations?
+
+TODO next:
+    - save different shards in diff repos
+    - what about this idea:
+        - use exclusively 2-byte integer for docIds in shards
+        - shard max size = 65,536 = 2^16
+        - put 2 shards in each repo
+        - both shards in same rocksdb
+        - subshard A, subshard B
+        - each shard has it's own startDocId
+        - subshard docId values added to startDocId to get real docIds.
+        - this way we get 17million+ documents with only 4 bytes per doc+relevance (sept2020 - where'd i get 17M ?? ... 2^24 is 16+M (3 bytes)... oh i get it.  my point was just that, using *OFFSETS* per shard, we can have inifite number of docs.  cos if all shards use the same docId value per doc, then they each have to have the full bytes needed for the max docId.  but using an offset, each shard just needs 2 bytes (max 65k), but then the max docId can be MORE than 16.7M (2^24).  which is more than 17M. but *subshards* is not actually necessary for this.  and seems wasteful cos it would require double+ effort per ferret. but 65k is a fine max documents limit per shard anyway.  from 50k to 100k, max times goes from 40 ms to 116 ms.  )
+        - otherwise it would be 6 bytes
+        - this also makes it easier to have very big indexes (5+ billion)
+            and very small indexes (hundreds)
+        - how to implement?
+            - when: during document tokenization -- record shard offsets
+            - change multiintersection functions to accept 4 byte docRels
+                - this might make Intscn slightly faster?? prob not noticeable
+        - so a SHARD has a fixed number of SUBSHARDS (prob 2 or 3)
+        - SHARD has an OFFSET
+        - 1 SHARD per REPO    ---- 1 REPO per SHARD
+        - 1 REPO per ROCKSDB  ---- 1 ROCKSDB per REPO
+    - ditch the "BUCKETS"
+        - use 1 list of the n "best" results
+        - keep track of nth best.  if new match is better than nth, then sort new match
+            into the best list.  remove old nth?  use linked list? for best
+            - prob use BTreeMap<u16, u16> =  <relevance, docId>
+        - each airman return its subshards as u16 docs.  sergeant can
+            unroll docId_u16s into docIdu16 + offsets for top matches
+        - actually maybe airman should unroll?  so it happens in parallel
+        - idk how sergeant could quickly pick best and keep track of offsets w/out pre-calculating
+        - yeah, calc in airman.  there will be SO FEW responses, it wont increase network time.
+        - then sergeant combine all the btreemaps into single map and take the top n = #pageResults
+        - no dont sort ALL together.  keep list of top n, like before.  only sort into top list if next item
+            is better than worst-of-best.
+        - so... we should transfer as simple byte arrays, NOT as btreemaps.
+        - use q bytes per docId.  return q as first element in response array.
+            - built in flexibility for tiny AND enormous indexes.
+        - max life easy as poss for sergeant -- might handle results from 100k+ of airmen.
+    - VARIABLE:
+        # of same-index shards per VM
+            - 1 for fastest processing.  many for cheaper processing.
+            - still 1 shard per repo right ... ? yeah ...
+                but we can have hundreds of repos per VM
+                - 5 billion indexes for $600/mo? (my cost)... per region
+    ! use github, ddb, rocksdb, shards, and subshards during doc/index tokenization
+
+
+        TODO have to figure out how to make stupid web requests.  my hyper is set to version 12 for some reason.  use as 12?  upgrade other stuff to 13?
+        i think 13 should be fine ... we were using 12 to pass variables into handler using an old example i found ....
+        but that's not actually helpful ... it wasn't ... for some reason ... can't remember rn.
+
+
+
+TODO
+- stop making notes in rust files - has to rebuild
+
+
+    /* INSTRUCTIONS
+cargo run destroy_everything
+./ferretReset.sh
+cargo run storeEndpoints http://0.0.0.0:3101 http://0.0.0.0:3102 http://0.0.0.0:3103 http://0.0.0.0:3104
+cargo run ci indie3 3
+cargo run i indie3 here
+cargo run i indie3 here is
+cargo run i indie3 here is a
+cargo run i indie3 here is a doc
+cargo run i indie3 here is a doc about
+cargo run i indie3 here is a doc about ducks
+cargo run pushIndex indie3
+cargo run ql indie3 about
+cargo run build__m_shard_urls
+cargo run read__m__shard_urls
+cargo run envFile
+cargo run initRemoteShards
+cargo run pullRemoteShards          #not needed really
+cargo run zclean                      #not needed really
+cargo run endpointsShardHealthCheck
+cargo run remoteShardsHealthCheck
+cargo run qr indie3 about
+
+
+
+cargo run qr indie3 about
+
+
+     */
+
+TODO -- have to update yeoman's m__shard_meta as new shards hatch!!!
+TODO - update "issueCommandsToAllFerrets" to accept single shardId at a time
+
+WHY SO SLOW
+https://www.reddit.com/r/rust/comments/dl4c8o/is_the_rust_compiler_really_that_slow/
+https://users.rust-lang.org/t/actix-simple-program-take-very-long-time-to-compile/34668/7
+
+working in readonlyrocks projects on iSynaptic's branch
+readonlyrocks works!!!! amazing. beautiful.
+also, "[profile.dev] debug = 0" has sped up build time considerably.  but we lose debugging oh well.  more print statemtns :)
+
+next - implement readonlyrocks in main proj.  qr in parallel to get total time down.
+        also try to do git stuff and ddb stuff in parallel. so slow rn
+
+
+try to get readonlyrocks mutableParallelStaticSingletonRocksdb working w par_iter
+
+ok actually this doesn't work testStaticMutParallelRocksdb
+it handles the db's in parallel. and changes to None or resets.
+but when i try to actually use them.  like ge ta value, we get PoisonError :(
+
+new plan:  not static.  pass db reference to hyper workers
+immutable.  create on startup.
+just restart the server per pull
+the ferret will be briefly deactivated per git pull anyway while the data updates.
+so just shut down and restart the server.
+this means we need a parent server?!?!?!?!?!?! ugh
+also this means each ec2 instance needs 2 copies of the data???
+
+TODO - implement selfreboot after db change (git pull etc)
+     - implement hyper 12 passing db args to hyper worker
+     - all tested in sandbox rust projects :)
+
+    - make main more clear -- split into 3 roles based on input params:
+        - ferret -- QUERY_MODE = true -- handle shard queries, data update dance (copy, pull to copy, self reboot, forward requests to understudy as needed, etc )
+        - oracle  --  QUERY_MODE = true -- handle queries, remote and local ?
+        - dispatch -- QUERY_MODE = false - handle index creation, doc indexing, etc
+
+but what to do first ..... ....... let's undo
+
+NO MORE STATIC GLOBAL MAP
+
+how to keep track of shard endpoints?
+ddb table:
+
+FERRET
+ip, port, cloudProvider, cloudRegion, indexName, shardName, isActive
+
+relevant rust functions:
+    - writeFerret(ip, port, cloudProvider, cloudRegion, indexName, shardName, isActive)
+    - readFerretsForIndex(indexName)
+    - deleteFerret(ip, indexName, shardName)
+    - deleteZergilngsForIndex(indexName)
+
+
+note: delete this in aws: ferrets_indexName_gsi -- just for testing
+
+see sub project nestedFiles - use this to put agents in a folder together (dispatch, oracle, etc )
+
+march 10 - this is complicated.  splitting into species. where to start?
+
+/// - starts rocksdb dbs
+/// - return (shardRoot, rocksRoot)
+/// - v3: this should modify singleton and not contain db
+/// - - how does db get handled:
+/// ----- librarian:    created in mydb object and passed around.  mydb should contain the QUERY_MODE variable.  that shouldn't be static anymore cos librarian does both querymode = true and false (true just for debugging tho rly)
+/// ----- dispatch:     no db
+/// ----- oracle:       no db
+/// ----- ferret:     created in mydb for consistency.  ONLY readonlyDB will be used.  created once per execution, passed to http client
+/// ----- switchboard:  no db
+///
+/// what if index is really small? what if index only has 1 shard? use ferret anyway.  load balancer
+///
+/// what species use singleton shardsmap?
+/// - librarian:    yes - needs to know git url, username, password per shard. store in singleton in memory.
+/// - dispatch:     needs ferret endpoints per shard, NOT gir url.  so it needs a slightly different singleton.  or same one with empty git urls?  no that's confusing. or easier... agh idk.  no. info should be restricted.  need-to-know
+/// - oracle:       needs ferret endpoints per shard, NOT gir url.  so it needs a slightly different singleton.  or same one with empty git urls?  no that's confusing. or easier... agh idk.  no. info should be restricted.  need-to-know
+/// - ferret:     should know nothing.  git url passed only during git operations/commands.  including password/username.  ferret should be as stateless as possible
+/// - switchboard:  should know nothing.  just c-level species endpoints
+fn updateDbsMap<'a>(indexName: &str, shardName: &str, gitUrl: &str) -> DbStuf2 {
+
+
+- start with switchboard.  1 command per execution.  hard-coded c-level species endpoints.
+    - or maybe endpoints in file? doesn't matter
+    - command starts with species name, like
+        librarian ci indie3 3
+        oracle q indie3 about
+        librarian q indie 3 about
+        dispatch remoteShardsHealthCheck
+    - what species next after switchboard?
+        - librarian  (see /// comments above)
+            - ci
+
+
+-----------------------------
+
+april 11 2020
+okay ummm wtf do ...
+
+keep working on outline.  focus on docs and design.
+read v3.md
+
+
+
+-----------------------------
+
+sept 7 2020 D: i dont remember anything or understand what any of this means ^
+
+sept 14:
+
+95000 emails indexed in a single shard (1 email per doc)
+  20 - 25 ms to search :/  not terrible? - for query "yahoo"
+  query "gmail" took 3 ms
+  "michael yahoo" took 3 ms
+  "rebecca" 3 ms
+
+- just tested loading 10,000 documents into a single shard.
+    - LOCAL searches took between 700 us and 3 ms
+    - REMOTE PARALLEL searches took between 18ms and 25 ms -- the same as for tiny tiny indexes
+        - note: "remote" here actually just means the ferrets are being served from a separate endpoint on my local machine.  its still actually all local.
+        - so actual times will be 25 ms + prob another 30 or 40 ms for round trip aws travel times between the owl and ferrets.
+        - but if num docs is < 100k, the ferret/ferret should just stay in the owl/oracle's roost/delphi.
+
+
+----------------------------------------
+
+sept 26 - this stuff just copy/pasted from the bottom of main.rs -- stuff from jan 2020:
+
+
+
+     */
+
+    // use firefox private browsing tab for worp
+    // use Terminal for running ferrets
+    // just start over trying to create new index, add docs, push, load to ferrets, and query.
+    // init contains env upload now.
+
+    // start ferrets in each child folder in
+    /*
+    TODO add a command to main to restart all the local ferrets
+ cd /private/tmp/worpEc2s/1;  /Users/stuartrobinson/repos/worp/worp-rust/target/debug/worp-rust z 3101
+ cd /private/tmp/worpEc2s/2;  /Users/stuartrobinson/repos/worp/worp-rust/target/debug/worp-rust z 3102
+ cd /private/tmp/worpEc2s/3;  /Users/stuartrobinson/repos/worp/worp-rust/target/debug/worp-rust z 3103
+ cd /private/tmp/worpEc2s/4;  /Users/stuartrobinson/repos/worp/worp-rust/target/debug/worp-rust z 3104
+
+     */
+
+    // v2 should be finished???
+
+    // think about how to refactor to be easier/faster to understand everything.
+
+
+
+   /*
+     * TODO:
+     * x build shard endpoint map - save to yeomanDB
+     * - init remote shards
+     * - pull remote shards
+     * - remote shard health check
+     * - endpiont health check
+     * - query remote
+     *
+     * x store "marco" key on EVERY db.  value = polo, for health checks
+     * x make new yeomanDB rocksbd for endpoint etc inventory
+     */
+
+     /*
+     * TODO v2
+     * - h.pctEncode url parameters before sending http requests.  decode on other end
+     * x use ferret.env to set credentials as environment variables.  encrypt/decrypt
+     * - then implement all the ferret endpoint commands (init, push, query, health checks, etc)
+     *
+     * ^ any uncertainties?  idts
+     *
+     *
+     *
+     * v4:  implement schema, tags, multiple searchable text fields, facets, 2-byte docIds (works cos subshards)
+     *
+     * v5:  search analytics
+     *
+     * v6:  auto-balancing?  self-healing?  spot pricing termination listening/healing
+     *?
+
+
+     ADVANCED FILTERING!!!!!
+     - tags
+          - main intersection function needs to accept special lists of docIds without the relevance values.  need to use these in intersection algorithm along with the others
+     - categories (counting) - keep a separate list in rocksdb of all docIds with their categories.  get intersection-style category counts AFTER returning intersecion
+          - filters in side bar can show up after search results.  cos its an afterthougth for users.
+          - is this the same as tags?  2 actions:  filter by tag, count by tag?
+     - price ranges (numerical filters)
+          - use hierarchical categories in the background.  want items between $3.35 and 14.95?  first get all items in categories: 2.25-5, 5-7.50, ... 12.50-15
+          - then refine those w/ continuous variables
+          - use numerical range categories like tags during search?
+      -- need inverted AND forward indexes for tags so we can search by tag, and also get counts per tag for results
+      - need to store POPULAR SEARCHES
+          - and then do typeahead searches on these (show popularity per?)
+      - need to provide SEARCH ANALYTICS
+          write this stuff to ddb, then bulk-write every hour? 10 minutes?  (cant use aws firehose - min item size 5kb lol wtf)
+          what if it showed real-time results ... websocket ... yes this would be very cool .........
+          when RTM=realTimeMonitor page is open, overmind forward query to RTA=realTimeAnnouncer.  when RTA receive a query, immediately send it via websocket.
+          only run RTA for index when RTM is open in a browser.  keep one RTA VM open at all times to handle potential RTM.  then start using it if RTM open.  multiple possible RTMs
+          display wordcloud animation per region? for all? region. (continent)
+          also send
+            - SEARCH:    timestamp, searchId,         sessionId, searchQuery
+            - CLICK:     timestamp, Option<searchId>, sessionId, clickPosition
+            - PURCHASE:  timestamp, Option<searchId>, sessionId,
+            - SESSION:   sessionId, ip
+          RECOMMEND:
+            - queries
+            - browses
+            - buys
+      -
+      TODO
+        - how: multiple TEXT fields per index??
+            - should be OR for multiple fields (usually, always?)
+            - if AND multiple TEXT fields - that's easy.  just intersect all togehter
+            - if OR mltiple TEXT fields, then we have to do intersections per field separately.  ideally in parallel so we open the facet objects once and use for both fields' intersections
+        - how: implement all these facets?
+            - each facet is like a token.  each facet:value combo gets its own list of docIds sans relevance
+            - facet_continuous: automatically broken down into facet_cat based on the value range
+                - automatic?  or demand user input in schema?
+                        - demand min, max values
+        - define index SCHEMA!  include TEXT, FACET_CAT_LIST, FACET_CAT, FACET_CONT, FACET_BOOL, FACET_LOCATION
+            use FACET_CAT_LIST for tags
+            use FACET_CAT_LIST?  or allow duplicate facet-key ?
+            if FACET_LOCATION(s) exist, store a couple encompassing geo region facet_cat values (like surrounding concentric squares or circles (miles in size))
+                - user input:  minimum distance unit (1 mile? 0.1 mile?) - to determine smallest encompassing facet_cat region
+
+
+
+      potential customers?
+      etsy - 1.5 seconds?
+      walmart - 5 seconds!
+      target -
+
+      https://www.walgreens.com/search/results.jsp?Ntt=toothpaste - category sums in filter bar
+
+     */
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

@@ -1,0 +1,370 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Line Chart</title>
+	<!-- <script src="../../dist/chart.min.js"></script> -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/luxon@1.24.1"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@0.2.1"></script>
+  <!-- <script src="../utils.js"></script> -->
+  <script>
+
+window.chartColors = {
+	red: 'rgb(255, 99, 132)',
+	orange: 'rgb(255, 159, 64)',
+	yellow: 'rgb(255, 205, 86)',
+	green: 'rgb(75, 192, 192)',
+	blue: 'rgb(54, 162, 235)',
+	purple: 'rgb(153, 102, 255)',
+	grey: 'rgb(201, 203, 207)'
+};
+
+(function(global) {
+	var MONTHS = [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December'
+	];
+
+	var COLORS = [
+		'#4dc9f6',
+		'#f67019',
+		'#f53794',
+		'#537bc4',
+		'#acc236',
+		'#166a8f',
+		'#00a950',
+		'#58595b',
+		'#8549ba'
+	];
+
+	var Samples = global.Samples || (global.Samples = {});
+	var Color = Chart.helpers.color;
+
+	function applyDefaultNumbers(config) {
+		var cfg = config || {};
+		cfg.min = cfg.min || 0;
+		cfg.max = cfg.max || 1;
+		cfg.from = cfg.from || [];
+		cfg.count = cfg.count || 8;
+		cfg.decimals = cfg.decimals || 8;
+		cfg.continuity = cfg.continuity || 1;
+
+		return cfg;
+	}
+
+	Samples.utils = {
+		// Adapted from http://indiegamr.com/generate-repeatable-random-numbers-in-js/
+		srand: function(seed) {
+			this._seed = seed;
+		},
+
+		rand: function(min, max) {
+			var seed = this._seed;
+			min = min === undefined ? 0 : min;
+			max = max === undefined ? 1 : max;
+			this._seed = (seed * 9301 + 49297) % 233280;
+			return min + (this._seed / 233280) * (max - min);
+		},
+
+		numbers: function(config) {
+			var cfg = applyDefaultNumbers(config);
+			var dfactor = Math.pow(10, cfg.decimals) || 0;
+			var data = [];
+			var i, value;
+
+			for (i = 0; i < cfg.count; ++i) {
+				value = (cfg.from[i] || 0) + this.rand(cfg.min, cfg.max);
+				if (this.rand() <= cfg.continuity) {
+					data.push(Math.round(dfactor * value) / dfactor);
+				} else {
+					data.push(null);
+				}
+			}
+
+			return data;
+		},
+
+		labels: function(config) {
+			var cfg = config || {};
+			var min = cfg.min || 0;
+			var max = cfg.max || 100;
+			var count = cfg.count || 8;
+			var step = (max - min) / count;
+			var decimals = cfg.decimals || 8;
+			var dfactor = Math.pow(10, decimals) || 0;
+			var prefix = cfg.prefix || '';
+			var values = [];
+			var i;
+
+			for (i = min; i < max; i += step) {
+				values.push(prefix + Math.round(dfactor * i) / dfactor);
+			}
+
+			return values;
+		},
+
+		months: function(config) {
+			var cfg = config || {};
+			var count = cfg.count || 12;
+			var section = cfg.section;
+			var values = [];
+			var i, value;
+
+			for (i = 0; i < count; ++i) {
+				value = MONTHS[Math.ceil(i) % 12];
+				values.push(value.substring(0, section));
+			}
+
+			return values;
+		},
+
+		color: function(index) {
+			return COLORS[index % COLORS.length];
+		},
+
+		transparentize: function(color, opacity) {
+			var alpha = opacity === undefined ? 0.5 : 1 - opacity;
+			return Color(color).alpha(alpha).rgbString();
+		}
+	};
+
+	// DEPRECATED
+	window.randomScalingFactor = function() {
+		return Math.round(Samples.utils.rand(-100, 100));
+	};
+
+	// INITIALIZATION
+
+	Samples.utils.srand(Date.now());
+
+	// Google Analytics
+	/* eslint-disable */
+	if (document.location.hostname.match(/^(www\.)?chartjs\.org$/)) {
+		(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+		(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+		m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+		})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+		ga('create', 'UA-28909194-3', 'auto');
+		ga('send', 'pageview');
+	}
+	/* eslint-enable */
+
+}(this));
+  </script>
+	<style>
+		canvas {
+			-moz-user-select: none;
+			-webkit-user-select: none;
+			-ms-user-select: none;
+		}
+	</style>
+</head>
+
+<body>
+	<div style="width:1000px">
+		<p>This example demonstrates a time series scale with custom logic for generating minor and major ticks. Major ticks are bolded</p>
+		<p>For more specific functionality for financial charts, please see <a href="https://github.com/chartjs/chartjs-chart-financial">chartjs-chart-financial</a></p>
+		<canvas id="chart1"></canvas>
+	</div>
+	<br>
+	<br>
+	Chart Type:
+	<select id="type">
+		<option value="line">Line</option>
+		<option value="bar">Bar</option>
+	</select>
+	<select id="unit">
+		<option value="second">Second</option>
+		<option value="minute">Minute</option>
+		<option value="hour">Hour</option>
+		<option value="day" selected>Day</option>
+		<option value="month">Month</option>
+		<option value="year">Year</option>
+	</select>
+	<button id="update">update</button>
+	<script>
+		// Generate data between the stock market hours of 9:30am - 4pm.
+		// This method is slow and unoptimized, but in real life we'd be fetching it from the server.
+		function generateData() {
+			const unit = document.getElementById('unit').value;
+
+			function unitLessThanDay() {
+				return unit === 'second' || unit === 'minute' || unit === 'hour';
+			}
+
+			function beforeNineThirty(date) {
+				return date.hour < 9 || (date.hour === 9 && date.minute < 30);
+			}
+
+
+			function after4pm(date) {
+				return date.hour >= 16;
+			}
+
+			// Returns true if outside 9:30am-4pm on a weekday
+			function outsideMarketHours(date) {
+				if (date.weekday > 5) {
+					return true;
+				}
+				if (unitLessThanDay() && (beforeNineThirty(date) || after4pm(date))) {
+					return true;
+				}
+				return false;
+			}
+
+			function randomNumber(min, max) {
+				return Math.random() * (max - min) + min;
+			}
+
+			function randomBar(date, lastClose) {
+				const open = randomNumber(lastClose * 0.95, lastClose * 1.05).toFixed(2);
+				const close = randomNumber(open * 0.95, open * 1.05).toFixed(2);
+				return {
+					x: date.valueOf(),
+					y: close
+				};
+			}
+
+			let date = luxon.DateTime.fromFormat('Jan 01 1990', 'LLL dd yyyy');
+			const now = luxon.DateTime.local();
+			const data = [];
+			const lessThanDay = unitLessThanDay();
+			const plus = {};
+			plus[unit] = 1;
+			for (; data.length < 600 && date < now; date = date.plus(plus).startOf(unit)) {
+				if (outsideMarketHours(date)) {
+					if (!lessThanDay || !beforeNineThirty(date)) {
+						date = date.plus({day: date.weekday >= 5 ? 8 - date.weekday : 1});
+					}
+					if (lessThanDay) {
+						date = date.set({hour: 9, minute: 30});
+					}
+				}
+				data.push(randomBar(date, data.length > 0 ? data[data.length - 1].y : 30));
+			}
+
+			return data;
+		}
+
+		const ctx = document.getElementById('chart1').getContext('2d');
+		ctx.canvas.width = 1000;
+		ctx.canvas.height = 300;
+
+		const color = Chart.helpers.color;
+		const cfg = {
+			data: {
+				datasets: [{
+					label: 'CHRT - Chart.js Corporation',
+					backgroundColor: color(window.chartColors.red).alpha(0.5).rgbString(),
+					borderColor: window.chartColors.red,
+					data: generateData(),
+					type: 'line',
+					pointRadius: 0,
+					fill: false,
+					lineTension: 0,
+					borderWidth: 2
+				}]
+			},
+			options: {
+				animation: {
+					duration: 0
+				},
+				scales: {
+					x: {
+						type: 'timeseries',
+						offset: true,
+						ticks: {
+							major: {
+								enabled: true,
+							},
+							font: function(context) {
+								return context.tick && context.tick.major ? {style: 'bold'} : undefined;
+							},
+							source: 'data',
+							autoSkip: true,
+							autoSkipPadding: 75,
+							maxRotation: 0,
+							sampleSize: 100
+						},
+						// Custom logic that chooses major ticks by first timestamp in time period
+						// E.g. if March 1 & 2 are missing from dataset because they're weekends, we pick March 3 to be beginning of month
+						afterBuildTicks: function(scale) {
+							const majorUnit = scale._majorUnit;
+							const ticks = scale.ticks;
+							const firstTick = ticks[0];
+
+							let val = luxon.DateTime.fromMillis(ticks[0].value);
+							if ((majorUnit === 'minute' && val.second === 0)
+									|| (majorUnit === 'hour' && val.minute === 0)
+									|| (majorUnit === 'day' && val.hour === 9)
+									|| (majorUnit === 'month' && val.day <= 3 && val.weekday === 1)
+									|| (majorUnit === 'year' && val.month === 1)) {
+								firstTick.major = true;
+							} else {
+								firstTick.major = false;
+							}
+							let lastMajor = val.get(majorUnit);
+
+							for (let i = 1; i < ticks.length; i++) {
+								const tick = ticks[i];
+								val = luxon.DateTime.fromMillis(tick.value);
+								const currMajor = val.get(majorUnit);
+								tick.major = currMajor !== lastMajor;
+								lastMajor = currMajor;
+							}
+							scale.ticks = ticks;
+						}
+					},
+					y: {
+						type: 'linear',
+						gridLines: {
+							drawBorder: false
+						},
+						scaleLabel: {
+							display: true,
+							labelString: 'Closing price ($)'
+						}
+					}
+				},
+				tooltips: {
+					intersect: false,
+					mode: 'index',
+					callbacks: {
+						label: function(context) {
+							let label = context.dataset.label || '';
+							if (label) {
+								label += ': ';
+							}
+							label += context.dataPoint.y.toFixed(2);
+							return label;
+						}
+					}
+				}
+			}
+		};
+
+		const chart = new Chart(ctx, cfg);
+
+		document.getElementById('update').addEventListener('click', function() {
+			const type = document.getElementById('type').value;
+			const dataset = chart.config.data.datasets[0];
+			dataset.type = type;
+			dataset.data = generateData();
+			chart.update();
+		});
+
+	</script>
+</body>
+
+</html>

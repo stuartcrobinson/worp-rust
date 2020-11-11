@@ -1,0 +1,199 @@
+query:
+{
+  "collection_name": "c1",
+  "do_highlights_tagged": true,
+  "do_highlights_objects": true,
+  "fields_to_return": [],
+  "queries": [
+    {
+      "query": "zebra",
+      "fields": ["*"]
+    }
+  ]
+}
+response:
+{
+  "total": 2,
+  "hits": [
+    {
+      "id": 6,
+      "score": 18724,
+      "source": {},
+      "highlights_tagged": [
+        {
+          "field": "f3",
+          "snippets": [
+            "<em>zebra</em> dog <em>zebra</em> dog cat mouse cat"
+          ]
+        }
+      ],
+      "highlights_objects_array": [
+        {
+          "field": "f3",
+          "highlights_objects_array": [
+            {
+              "content": "",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            },
+            {
+              "content": " dog ",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "score": 18724,
+      "source": {},
+      "highlights_tagged": [
+        {
+          "field": "f3",
+          "snippets": [
+            "<em>zebra</em> dog <em>zebra</em> dog cat mouse cat"
+          ]
+        }
+      ],
+      "highlights_objects_array": [
+        {
+          "field": "f3",
+          "highlights_objects_array": [
+            {
+              "content": "",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            },
+            {
+              "content": " dog ",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+############################################################## change to:
+
+
+query:
+{
+  "collection_name": "c1",
+  "do_highlights_tagged": true,
+  "do_highlights_objects": true,
+  "fields_to_return": [],
+  "queries": [
+    {
+      "query": "zebra",
+      "fields": ["*"]
+    }
+  ]
+}
+response:
+{
+  "total": 2,
+  "hits": [
+    {
+      "id": 6,
+      "score": 18724,
+      "source": {},
+      "highlights_tagged": [
+        {
+          "field": "f3",
+          "snippets": [
+            "<em>zebra</em> dog <em>zebra</em> dog cat mouse cat"
+          ]
+        }
+      ],
+      "highlights_objects_arrays": [
+        {
+          "field": "f3",
+          "content_objects": [
+            {
+              "text": "zebra",
+              "is_highlight": true
+            },
+            {
+              "text": " dog ",
+            },
+            {
+              "text": "zebra",
+              "is_match": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "score": 18724,
+      "source": {},
+      "highlights_tagged": [
+        {
+          "field": "f3",
+          "snippets": [
+            "<em>zebra</em> dog <em>zebra</em> dog cat mouse cat"
+          ]
+        }
+      ],
+      "highlights_objects_array": [
+        {
+          "field": "f3",
+          "highlights_objects_array": [
+            {
+              "content": "",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            },
+            {
+              "content": " dog ",
+              "type": "plain"
+            },
+            {
+              "content": "zebra",
+              "type": "bold"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

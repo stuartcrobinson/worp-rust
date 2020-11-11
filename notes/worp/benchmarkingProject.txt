@@ -1,0 +1,92 @@
+
+i think this is stuff i sent to that snake sachin:  (this line from sept 2020 - stuart)
+
+
+
+before we can start, we need to finalize the infrastructure.
+
+so i thought a good initial milestone could be a benchmarking test on different infra combinations.  
+
+we need to know the fastest way to transfer data between Storage and Compute options among several different low-cost possibilities. 
+
+we need to know transfer metrics (TTFB, speed, total time, etc) between Data Object Storage and Compute options with these variations:
+
+Data  Object Storage options:
+    - wasabi
+    - s3 
+    - b2
+
+Data Object Sizes:
+    - 1 B 
+    - 1 KB
+    - 10 KB
+    - 100 KB
+    - 1 MB
+    - 10 MB
+    - 100 MB 
+    - 1 GB 
+
+Compute options:
+    - Packet
+        - t1.small.x86  - 1 x 2.5 Gbps
+        - c1.small.x86 - 2 x 1 Gbps
+        - n2.xlarge.x86 - 4 x 10 Gbps
+    - EC2
+        - t2.nano       - 0.5 GB -  low
+        - t2.micro      - 1 GB -    low
+        - t3.nano       - 0.5 GB -  5 Gbps
+        - t3.micro      - 1 GB -    5 Gbps
+        - a1.medium     - 2 GB -    10 Gbps
+        - a1.large      - 4 GB -    10 Gbps
+    - lambda
+        - 128 MB RAM
+        - 1 GB RAM
+        - 3 GB RAM
+
+The providers are Wasabi, AWS, and Packet.  we need to conduct these tests at the following datacenter region combinations:
+
+Wasabi + AWS:
+    1.  aws:    central europe (frankfurt)
+        wasabi: central europe (amsterdam)
+    2.  aws:    virginia (ashburn, VA)
+        wasabi: virginia (ashburn, VA)
+    3.  aws:    oregon
+        wasabi: oregon
+
+Wasabi + Packet:
+    1.  packet: central europe (amsterdam)
+        wasabi: central europe (amsterdam)
+    2.  packet: virginia (ashburn, VA)
+        wasabi: virginia (ashburn, VA)
+    3.  packet: US west coast (los angeles, CA (LAX1))
+        wasabi: US west coast (oregon)
+
+these aws-only tests can be done anywhere:
+    - ec2 + s3 
+    - ec2 + dynamodb 
+    - lambda + s3 
+    - lambda + dynamodb 
+
+------------------------------------------------------------------------------------
+
+please create a single command to run this entire test include provisioning infrastructure from scratch using terraform.
+after the test is complete, this code should also take down any of the infrastructure that was created
+
+you may use a programming language of your choice, but please make sure that it doesn't affect latency of the tests. 
+
+the test should post the results to a public html page, and return the url of the test results.  
+
+the tests should execute each of the transfers configurations many times, and report the min, max, n, median, mean of results. 
+
+if any of the above options or configurations are not possible or available, use your best judgement to make appropriate changes that will help us determine the overall goal: comparing speeds between different options.  
+
+please use your own provider accounts for these configurations.  
+
+i'll give you $20 right now for provider accounts, and pay another $100 once the code is ready for me to try.
+
+again, i should be able to run the code with one click, and it should:
+    - deploy all necessary infrastructure
+    - run each test many times 
+    - calculate statistics per test performance
+    - publish test results to a public webpage (accessible via ip address or long cryptic url is fine)
+    - shut down/remove any infrastructure

@@ -1,0 +1,34 @@
+to get crow to work on mac:
+
+https://github.com/SOHU-Co/kafka-node/issues/881
+using boost 1.60
+    problems 1.70+
+
+
+trying to run new c++ project with crow sitting in main dir.  doesn't work:
+fatal error: 'boost/optional.hpp' file not found ?
+
+so we have to write new code from within crow project .... 
+.... that'll be fine until the next external library we need to use ...
+... just use "helloworld" in crow.  idk how to make new c++ file... makefiles etc ???
+
+
+try these next? 
+https://github.com/eidheim/Simple-Web-Server/blob/master/http_examples.cpp
+
+another option:
+https://github.com/Gregwar/mongoose-cpp
+
+http://pistache.io/
+
+https://github.com/meltwater/served
+
+Beast -- "too low-level"
+cppnetlib wtf is this
+Casablanca aka cpprestsdk https://github.com/Microsoft/cpprestsdk - no this is just for clients 
+
+-------------------------
+using crow. 
+
+TODO 
+    - 

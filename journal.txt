@@ -1,0 +1,1696 @@
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+april 11 2020
+okay ummm wtf do ...
+
+keep working on outline.  focus on docs and design.
+read v3.md
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 7 2020 D: i dont remember anything or understand what any of this means
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 14:
+
+95000 emails indexed in a single shard (1 email per doc)
+  20 - 25 ms to search :/  not terrible? - for query "yahoo"
+  query "gmail" took 3 ms
+  "michael yahoo" took 3 ms
+  "rebecca" 3 ms
+
+- just tested loading 10,000 documents into a single shard.
+    - LOCAL searches took between 700 us and 3 ms
+    - REMOTE PARALLEL searches took between 18ms and 25 ms -- the same as for tiny tiny indexes
+        - note: "remote" here actually just means the ferrets are being served from a separate endpoint on my local machine.  its still actually all local.
+        - so actual times will be 25 ms + prob another 30 or 40 ms for round trip aws travel times between the owl and ferrets.
+        - but if num docs is < 100k, the ferret/ferret should just stay in the owl/oracle's roost/delphi.
+
+next steps:
+! optimize the bulk indexer.
+    X currently trying it out w/ adding new doc to END of invind instaed of walking across the whole thing to find a bigger docId first (which wonthappen for bulk index)
+        - seems to be going faster .... ?
+    X yes this helped!
+    - optimize more tho.... it's still constantly reading and writing invinds from rocksdb .... hold this stuff in memory?  and then dump to rocksdb at once?
+        - yes this is a good idea and should be done.  but rn would take mroe dev time than the half hour of computation it would save.
+        - what to do while 95k run is running?  trash, shower,... this doenst have to finish... but we'll get better sense of timing
+        - UPDATE - it's taking a lot longer than expected.  MUST build invids in memory before writing to rocksdb all at once.
+          - meanwhile - learn rust. learn how to update maps etc
+- load 100k docs into a single shard
+    - only done 10k so far
+- load 10k and/or 100k docs into multiple shards
+    - kind of the ultimate validation test
+    - try this tonight? after 95k run? to run over night?  load 95k into 3 shards each
+
+after that ... GOALS?
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 15
+
+last night only 20k documents were indexed.  that took about 10 hours.  working with that today
+
+X why is query "about" taking only 4 ms "local", but 60 or 30 ms "remote" (using local endpoint instead of same process)?!?!?!?!?!?!
+  - figure this out now.
+    - answer: it was including the time to open a new rocksdb connection to read m__shard_meta
+      - so basically all my previous timings are wrong
+X for bulk index, build ii's in memory then dump to rocksdb all at once
+- have to create/seed 2nd shard to use bulk index .... maybe bulk index should make the shard itself (duh)
+  - how?  what does it mean to create a new shard?
+  - look at the normal indexing custom command... it does it there as needed
+X need new top level command: lk: listNKeysForShardId params: shardId, n
+X need ls: listShards - (no params - list all of them)
+X need getShardNamesForIndex - wrote ls for listShards
+X need countNumDocsForIndex - wrote countObjects or soemthing.
+- use rsync instead of github to transfer rocksdb files from squirrel to ferrets/ferrets.
+    - so, squirrels need to know where all the ferrets are?
+    - or ferrets need to know where all the squirrels are, and then its the ferretherd's job to request an update from the squirrel?
+      - yeah prob that.  ferrets kno where squirrels are.  squirrels wont change as much anyway.
+  - STEPS
+  - cargo run pushIndex hk5kb <-- no need for this
+  - cargo run initRemoteShards <-- convert to prepareRemoteShards or something.  just create the folder structure etc?
+  - cargo run pullRemoteShards <-- convert to remoteShardsRequestUpdate or something.  ferret initiates rsync to copy squirrel data onto their own dir
+  ^ combine these 2 actually
+
+  so what do we need from ddb if not using git? .......... nothing???? yeah nothing!
+
+  just tell each ferret the rsync path to the squirrel's library
+
+  - so get rid of git and get rid of ddb crap.
+  - this means trash the env vars???? trash the .passwords file -- it's all aws and git passwords stuff.
+  - will we need git ever? no.
+  - will we need ddb ever? yes. for state.
+  - instead of git, in the future, we'll back up rocksdb to s3
+    - we can just overwrite existing objects.  just need eventual consistency cos just backup.
+    - s3 rsync? and should we just use wasabi instead?
+      - rclone? works for wasabi :)
+
+  --- wait .... how has ferret been handling data update without shutting down.... i thought it would have to respawn..... maybe not????
+      - can a ferret update itself??  and keep its rocksdb going?  that's the benefit of the readonly rocks maybe????
+
+- what about proximity search? phrase search?
+
+unscientific PERFORMANCE TESTING - "local" means same rust process.  "remote" here means different processes but same machine.  sending requests to ferret endpoint on my laptop.
+
+50k docs - 1 shard
+query                        time (ms) local   remote (parallel)
+about                         9                 22, 16, 45, 50, 20
+vixen                         0.6               4, 4, 4
+how could you say something   20                39, 39, 32  (serial: 39 , 32, 29)
+
+100k docs - 1 shard
+query                        time (ms) local   remote (parallel)
+about                         15, 18, 17         31, 27, 25
+vixen                         0.6, 0.6           4, 3.5
+how could you say something   35, 35, 36         116, 75, 99
+
+200k+ docs in 2 shards (plus a few shards with like 100 docs each)
+query                        time (ms) local
+about                        32, 34, 30
+vixen                        5, 3, 2
+how could you say something  76, 77
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 16
+
+X merge current branch in as v2.1 - bulk indexing
+X create new branch v2.2 - no git or aws. all local
+
+X gut git, replace with rsync
+  - where to start ....
+    - start with main. where is git used in main? or ddb
+  - ok this is finished ... running a test now w/ 3 shards w/ 10k indexes each ... gonna take a while? shower now
+      - then merge v 2.2
+
+PERFMANCE TEST
+
+4 shards with 10k docs each
+query                        remote series    remote parallel
+about                        9, 7, 7          8, 9, 7, 8
+vixen                        3, 3, 3          4, 3, 3
+how could you say something  9, 9, 8          14, 9, 11, 10
+
+next - overnight - fill 4 shards w/ 100k each
+
+in the morning - do perf test for the 4 shards w/ 100k each.
+
+then merge the branch and start v2.3 --
+2.3 - move main.rs to its own server (process) and interact w/ it via postman
+2.4 - running everything in aws. describe in detail how to generate the docs seeding file.  like from the corpa repo and the docs_generator project in this repo.
+        - is this actually a new version?  anything different about the code? maybe not ....
+        - this version can just include the instructions on how to deploy etc ... ?
+        - well it needs to deal w/ remote locations for rsync etc
+2.5 - what's the next big question to answer?
+        - phrase search?  proximity search?  these are nice but dont seem critical for pitch....
+        - just focus on financial modeling.  nothing more to dev b4 pitch.
+        - no - ANSWER: WORP COLD START TIME? ie, how fast can we download all the shard rocksdbs files from s3 into idle ec2 machines to be ready to process queries
+          💥 implement rclone from ec2's to s3.  and main.rs command to dictate when shards should delete themselves and when they should backup to s3 and download from s3.
+              - have to worry about buckets?  no, just prefix the rocksdb object names with something like the shard number.  or prob use s3 fake folder names "asdfsdf/file" ?
+                - yes i *think* rclone supports aws subdirectories https://rclone.org/s3/
+                - i *think* aws sync supports this also but unclear???? https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html
+                    https://serverfault.com/a/889086/542676
+                    https://stackoverflow.com/a/27935645/8870055
+        - this is to demonstrate how cool it would be for someone's index to be totally cold and nearly free for worp until someone goes to the webpage, but then superfast search would be immediately deployed and ready for them w/in a couple seconds (or less???)
+        - make it possible to have affordable global search.  without paying extra per location.  but u have to select the primary location.  this is where the squirrel will live.
+          - cost to transfer between aws regions? - ave about $0.05 /GB.  ave about $0.10/GB from aws to Internet
+          - so transfer once to wasabi and then disseminate from there
+    - so, 2.5 is: upload and download from ferrets to s3 subdirectories.  then:
+
+    PITCH TO JOE - and DAVID ?
+
+    (after making better $$ models)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 17
+
+processes still running cos energy saver settings not updated on this laptop.  they pause when computer sleeps duh.  fixed. 10 more minutes
+-  WHAT'S THE DEAL W/ SUBSHARDS?  some old notes in serverfull_design.txt.  and i added comment to the subshards part.
+- currently, in shards, docIds need 3 bytes. because each shard is storing the actual docIds.  3 bytes, max = 16.7M.
+    - but if shards referenced docIds via an offset, we could use 2 bytes instead of 3. max 65k docs per shard which is good for speed.  and have infinite number of docs instead of 16.7M.
+    DRAWBACK
+    - the downside to limiting shards to 65k docs:  if a customer has very tiny docs, it would make sense to pack more docs per shard.  to minimize concurrent vCPUs in the owl.
+    - Solution: just process several shards simultaneously by a single ferret.  either try it in parallel, or just series might be fastest.
+      - but i think overall using 4 bytes per doc instead of 5 will be significant time save.  (check notes to see what step took longer ... was it reading or intersecting...? nvm they're a mess.  just measure w/ current version. intersection time vs objects reading time. )
+          - query local: "how could you say something"
+              readtime: 16.567415ms, intersection time: 8.556544ms
+          - read time is typically 2x to 4x longer than intersection time.  so dropping from 5 to 4 bytes per doc will help!
+              - but this also means that appending POSITION data to each invind is a bad idea.  will make read time even slower.
+              - need to use separate token pair invinds instead.
+- WHATS THE DEAL WITH SORTER/useAltSort?  this is a &[u16] input parameter to multiIiIntersection.
+    - appears to be a way to sort results by some external, non-search-related way.  such as by document publish date, or popularity.
+    - looks like it's an array of values where the index is the document Id. this will have to be addressed with offsets too.
+- WHATS THE DEAL WITH POSITION? search "position" in "todo.txt".  some different options for how to handle phrase searches:
+    1. store token positions lists as huge array appended to the end of each II.
+    2. store separate ii's by key: word pair.  (i) contiguous word pair? (ii) contiguous ordered word pair? (iii) proximal token pairs.
+- WHATS THE DEAL WITH LOCATION? we need to know the locations of each token in the original document for results highlighting.  positions data wont help ^ cos parsed/cooked docs
+    - need separate locations index that the owl stores.  key: document_token. value: list of starting character locations.
+
+so, easy chores for whenever:
+~ remove subshards
+~ implement docId offsets
+  - have to implement offsets for "sorter: &[u16]" in multiIiIntersection
+~ use 2 bytes per relativeDoId (calculated using the docId offset), instead of 3 bytes per docId.  in shards. see if its faster 🤞
+
+--
+4x 100kb indexing is finished.
+realization: just generate 1 shard, and then manually copy to different locations for more shards ... dont have to wait all night.  do same for re: aws.
+
+
+do v2.3 today.
+2.3
+- move main.rs to its own server (process) and interact w/ it via postman
+X measure time cost for intersections vs rocksdb object reading
+
+investigate -- are shards currently analyzing subshards in series?  yes. but changing that would only make it like 3% faster rn. ignore for now.
+
+PERFORMANCE TEST
+4 shards 100k documents each
+query                        remote series    remote parallel
+about                        8, 8, 6          70, 90, 50
+vixen                        2, 1, 1
+how could you say something  140, 126, 133    332, 340, 270
+
+these "remote" (served locally) values are troubling... but maybe it's slowed down cos all on same machine?  maybe will be actual clean isolated parallel computations on ec2 .... 🙏
+
+TODO:
+X serve main.rs and access it via postman or something (remember postman response times might be wronng .... ).  should i use node project? nrn
+  X what's the best way to run a rust server?  dont use what i'm using now... google for best option.
+    - i just used hyper like the ferret was using.  handling the map really stupidlybut it works... . see owl.rs
+    - example:
+    cargo run owl 3030
+    http://localhost:3030/?i=demo&q=one two three
+      - see main.rs comments right under the code for more steps/details
+
+next? ... 2.4: run it in aws -- THE REAL TEST
+
+v2.4 - how to run owl and ferrets in aws ...
+  - dont worry about generating rocksdb shards on aws ... do that on my laptop and then rsync to the ferrets.
+  ~ write new ferret function: initForPreloadedRocksdbData or smtg
+  - FERRETS:
+    - deploy ec2, install git and rust
+    - pull worp-rust git
+    - rsync rocksdb data from laptop to ec2
+    - start the ferret in pre-loaded data mode
+    - get the endpoint
+  - OWL:
+    - deploy ec2, install git and rust
+    - ssh in to run commands... all these should work:
+          cargo run storeEndpoints http://0.0.0.0:3101 http://0.0.0.0:3102 http://0.0.0.0:3103 http://0.0.0.0:3104 #replaced with actual aws ferret endpoints
+          cargo run build__m_shardId_endpoint
+          cargo run read__m_shardId_endpoint
+          cargo run endpointsShardHealthCheck
+          cargo run remoteShardsHealthCheck
+          cargo run qr demo about
+          cargo run owl 3030
+          curl http://localhost:3030/?i=demo&q=about
+    - now try querying from laptop!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  ^ first try all this locally .... see if it works by manually copying rocksdb into the ferret roots. and if there's no shards in the owl. so ql wont work.
+                    ignore: - should we change "storeEndpoints" to read in shardNumbers And endpoints?  cos if they get assigned randomly, that'll make it harder to send the right data to the right ferrets... wait this doenst matter they're all the same ha
+
+  How to try locally?
+    X delete library (leave data in ferrets) NO - just delete the SHARDS!  we need the meta.
+      - ok so just rsync teh meta shard to owl. and yeoman
+    X write initForPreloadedRocksdbData for ferrets
+
+  How to set up ec2s?
+    - do everything manually?  not for every ferret .... that sounds crappy
+    - start w/ AMI that includes rust and git? i guess just ssh'ing commands ... but we dont want to be sshing into stuff a lot.
+    - make an ec2 instance w/ everything set up ... then b like "launch more like this? that start the ferret when launched???" but honestly idk how to do that ....
+    - let's just manually ssh into all the ferrets for now.  just start with like 4.
+    - just use scp to transfer the rocksdb dirs. from my laptop. for now.
+
+setting up an ec2 rn.  chose defualt ubuntu. git already installed.
+following this to install rust: https://www.cloudbooklet.com/install-rust-on-ubuntu-18-04-lts/
+
+sudo apt update
+sudo apt upgrade
+curl https://sh.rustup.rs -sSf | sh
+rustc --version
+
+^ didn't work on ubuntu.  trying aws ami now: (wait ... yes it did... it just needed more memory to build)
+
+    sudo amazon-linux-extras install rust1 -y
+        sudo yum install git -y
+        git clone https://gitlab.com/WorpHQ/dev/worp-rust.git
+
+^ ACTUALLY didn't work. old version? weird errors
+
+  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+Worp BOB THE BUILDER INSTALLATION/SETUP STEPS
+
+trying ami now, 8 gb: t2.large i think
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+sudo yum -y install gcc
+sudo yum install  openssl-devel -y
+# ??? ^ idk if that helped or not https://github.com/sfackler/rust-openssl/issues/855
+sudo yum install clang -y
+# https://github.com/paritytech/substrate/issues/3067
+# according to other notes, i might need t3.2xlarge to have enough memory to build this on linux
+
+sudo yum install git -y
+git clone https://gitlab.com/WorpHQ/dev/worp-rust.git
+git clone https://gitlab.com/WorpHQ/dev/binaries.git
+
+# https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-up-node-on-ec2-instance.html
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+. ~/.nvm/nvm.sh
+nvm install node
+node -e "console.log('Running Node.js ' + process.version)"
+  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+
+
+
+omg it looks like it successfully built on a t2.large!
+but --release build is going VERY SLOWLY .... maybe worth using a huge machine for this ....
+took 11 minutes.
+
+~ how to combine commands on several lines so i can copy paste them at once?  w/out fish.
+
+^ this process is working! binary from binaries repo runs successfully on the t3.nano (i didnt actually do anything w it yet.)
+
+that is, building on a t2.large and then running on a t3.nano. :)
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 18
+
+planning out install/setup scripts.  lets use node. i added node install scripts to Bob setup commands above.
+wrote startup_2_4.sh -- should do all the things to set everything up in aws assuming:
+- i deployed the ec2's manually
+- latest code is checked into git repo branch v2.4_run-owl-and-ferrets-in-aws
+
+test this first thing tomorrow.
+
+other thoughts from today:
+
+- will have to provide "encryption at rest"
+    - must be quantum-safe. use "Post-quantum cryptography"
+    - see algolia's pages on security.  soc2, soc3?? etc
+- use willowtree for website. pathos ethos not seem so great.  maybe Kompleks Creative ? no they just do cool wordpress sites etc.
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 19
+
+ran own and ferrets on aws and was faster than local tests.  cos actually parallel i guess
+- realized that aws charges transfer fees from within same region.
+- startup_2_4.sh is updated.  everything's loaded and running in aws.  hoping to keep it running till after meet w/ joe. t2.large is like $2/day.  everthing else together is like $4/mo
+
+$$ calculations
+
+ - each ferret should be able to handle 10 requests per second and stay below 5% cpu usage.  (if each request takes 20 ms cpu time)
+ - so for an 8 hour day, that's 8 * 60 * 60 * 10 = 288k requests/day  ==> 8,640,000 req/mo
+ - if machines shared by 10 customers, that's 864,000 req/mo
+ - let's say each 100k needs two t3.nanos.  on all the time? ==> $2.50/mo
+ - 5kb transfer out per request. 0.09$/gb ; that's 0.00000045 per request.  times 0.86M requests = $0.40 (note: this would be free in azure. but their machines are slower and maybe more expensive)
+ - so 100,000 documents and ~1M requests is $0.40 + $0.25 = $0.65  (assuming 10 customers sharing the machines that are on all the time.  turn off machines sometimes? $0.50/mo)
+ - so 1M requests, 100k docs: costs me $0.50/mo ---- algolia charges $100+
+ - 100k requests, 100k docs? closer to $0.10/mo (cos 100k really only needs 1 machine. the owl can load and run intersections)
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 22
+
+talk w/ joe was a lil depressing.  but useful.  his perspective: dont get any funding.  must release something that will get traction by myself.
+
+even if no paying customers.
+
+new goal: design simplest sellable product.  aka mvp i guess
+
+simplify everything a lot.
+
+1 machine per customer.  combine owl, ferret, squirrel.  theyll have to share resources, so use lower process priority for squirrel. ??? will that work??? or slow down queries...
+
+need:
+- multiple indexed fields per document
+- indexing:
+    - bulk
+    - individual
+
+for now, we dont need: phrase matching, proximity matching, or fuzzy matching. do those later.
+
+restrict everything to 100k docs. or 500 MB
+
+leave the ec2s on all the time.  intra-region transfer costs changes everything...
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 23
+
+here are results from the demo in aws with 10 customers sharing 4 ferrets, each with indexes of 100k documents (each)
+
+
+PERFORMANCE TEST
+4 shards 100k documents each
+query                        aws multiple machines in parallel
+about                        60, 64, 32, 63
+vixen                        39, 21, 27, 31
+how could you say something  154, 51, 81
+and but if then it           162, 100, 97, 101, 453, 110  (the longest single shard took was 43 ms for total postman round trip time of 161)
+it                           187, 92, 105
+
+for a 130 ms total request, the transaction cost associated with external ferrets was 40 ms.  (so on a single machine, a 130 ms query would only be 90 ms i think?)
+
+NOTE - intra-region data transfer costs money!!!! so for actual external-ferrets version, ferrets must return a minimum of data.  so sorting needs to be done on each ferret.
+        - instead of just back at the owl.  currently, the ferrets are passing back a ton of data that gets sorted by the owl.  unnecessary i tihnk.
+
+overall this seems quite amazing.  need to double check the multi-interseciton results see why it's gving wrong # total results....
+
+X proposed project to ross
+X made trello board based off notes:
+
+v0.0.2
+
+- duplicate index requests to wasabi
+- dump wasabi index requests to global worp duplicated regions
+    - (dont transfer between aws's)
+- periodically aggregate the wasabi data (into a single json bulk upload file)
+
+v0.0.1
+
+1 ec2 per customer  - no sharing!
+no spot instances
+($3.74/mo/customer)
+
+1 region per customer
+free:  50k docs,  50k requests (v002: $10/xtra region)
+paid: 150k docs, 150k requests (v002: $20/xtra region) - $40/mo
+
+TODO
+
+worpdrive:
+- highlight matches
+- fix multi-intersection wrong results
+- multiple indexed fields per document/record
+- index single
+- index bulk
+saas:
+- website
+- payments - paddle???
+- deploy new ec2 per customer
+- ddb cusomter data? or just cognito
+- search api:
+    node (worp.js)
+    php (worp-client-php)
+- generate api key and secret key for customer accounts
+  - separate keys for different permissions? write, delete, read, update records?
+- how to monitor traffic? pick a logging service from gohto notes
+
+
+logging?  30 day retention
+
+datadog   $2.50/million     https://www.datadoghq.com/pricing/#section-log
+scalyr    $50               https://www.scalyr.com/pricing
+logdna    $100              https://logdna.com/pricing/
+logz.io   $expensive        https://logz.io/pricing/
+splunk    $expensive        https://www.splunk.com/en_us/software/pricing/enterprise-and-cloud.html
+sematext  $150              https://sematext.com/pricing/#logsene
+sumo      $idk              stupid confusing https://www.sumologic.com/pricing/#price-scale-smarter
+xplg      $expensive        https://www.xplg.com/pricing/
+loggly    $expensive        https://www.loggly.com/plans-and-pricing/
+
+
+- prefix search - just index all the prefixes (yeah, size of indexed data will increase by 10x or so).  maybe only a factor of 5.
+    - can we charge based on index size?
+        - no
+    - need to control this per query term per search.  only do prefix search for last word in the string. unless it ends with a space.  just do that by default for now.
+        - so prefix invinds need to be in a separate rocksdb db.  or a separate "channel"? is that a thing
+
+EOD - made good progress on results highlighting.  luckily i already did the location stuff last year. but i did it wrong so might have to redo in a big way.
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 24
+
+~ fix locations bug
+  split_remove vs split_keep
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 26
+
+X name docIds by uuid
+    - note: for bulk upload, use incremening docIds.  not uuids
+    - UGGGGGHHHH NO.  docIs have to be closest-packing numeric!!!!!! for entire intersection algo to work.  docIds must be numbered from 1.
+    - fuck. my grand plan for rapid timestamp graphing is dead.  calculate that after returning the main search results.  just like w/ the facet aggregations/counts.
+X undo uuid docId name D: D: D: D:
+    - is it still okay for shardName? uuid?
+X put each collection (clx) in its own dir.  put indexes dir inside the clx dir
+X clx dir contains rocksdbs: "data" and "meta", and dir: indexes
+X move documents and locations out of "meta" and into a new "data" rocksdb <---- per clx, not per index anymore
+X "meta" contains: shardMaxLen, .... anything else ?????????  what goes in meta???? this is why we need to remove all the big stuff.  so we can just list the keys and see wahts in there
+o for clx query, must specificy somehow if its an AND query or an OR query.
+    - eg searching doc title and description atrs (attributes) would be an "OR" query, but searching the description and pricing would be AND
+    - is that what "facets" are?  "AND" by default?
+    - let's learn about this first ...
+  ----------->   - no just do OR (disjunctive) for now.  do "and" later when implementing facets.https://www.algolia.com/doc/guides/managing-results/refine-results/filtering/in-depth/filters-and-facetfilters/
+
+~ implement search
+
+
+
+learning about nested stuff
+https://discourse.algolia.com/t/searching-multiple-attributes-of-nested-objects/1572
+https://discourse.algolia.com/t/how-to-match-multiple-attributes-in-nested-object-with-numericfilters/4887
+
+we'll have to support nested documents.  and then nested facets ... hmmmm
+  - make a new index for each nested document type
+  - usually like an array of objects
+
+~ how to implement FACETS (like algolia) or AGGREGATES (like elasticsearch)
+    - easy.  just like any other invind.  just have to control whether or not the ba's get intersected or unioned.
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 27
+
+fix highlighting.  maybe multi attributes is working?
+
+use "field" instead of "attribute"
+
+use "fieldValue"
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 28
+
+time for pagination .....
+
+eastist/dumbest way:
+- per query, specify the page number.  then just set page1 results to be big enough to make it to page n. then only return page n.
+
+- if we combine relevances by purely taking the max relevance for a given doc (among the multiple docFieldHitToks), then each intersection only needs to return
+    exactly (n * RESULTS_PER_PAGE) results.  and this will probably be way too many.  but it will never be not enough.
+
+X done - TODO use max for comibend relevance v__docId_combinedRelevance
+
+CUSTOM SORT! v0.0.5
+
+...how
+
+"sorter" is currently a vec<u16> -- where the vec index is the docId. this mean we can only have 65k unique sort positions which is no good.
+- change sorter to u32.  taht gives us 4 billion, good enough for now.
+- so, a "sortable" field has too be declared during indexing.  because we have to create this "sorter" vec.  something else to manage during doc updates/inserts/deletes.
+- for now, just rerun the whole query when sort changes
+    - later, we'll cache the results and somehow just resort them.
+- idnexing is the first challenge here.  building and updating the "sorter" vec in rocksdb.  where to put it? it goes in shards.  each shard of docs is sorted individually.
+    - but then Owl needs a copy of all the sortables too. to re-sort the results.
+    - OR, should ferrets just return the sorter value along with the intersection?
+        - yes.  ferret return sortable.  this might not work best for external ferrets but that's a problem for Future Stuart, sry buddy.
+
+okay so just build the sorter vecs during indexing, and then load them during querying....
+    - the code to use them is already there -- maybe it works????
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 29
+
+sort.
+
+~ create sorter db object during indexing.  DOES THIS MEAN WE NEED A SCHEMA?  how does alg do it... https://www.algolia.com/doc/guides/managing-results/refine-results/sorting/
+~ tie-breaking
+
+~ implement schema for this   ------- so when a doc is being indexed, we know how to index the fields (prefix? sorter? dont index?)
+    - max_docs_per_shard [number]
+    - default_num_results_per_page
+    - fields [ array of:
+      - name ["<fieldName>"]
+      - sortable_direction ["ascending" or "descending"]
+      - searchable ["true" or "false"] ----- defaults to true???
+      - prefix_searchable ["true" or "false"] ----- defaults to true???
+      - is_aggregatable true/false           ------ default to false
+      - type ????? string, number, coordinates,
+      - searchable_number_chunk_size        ----------  searchable numbers get split into searchable chunks.  this will prob be automated irl.  to evenly distribute nums between chunks.  no way for user to know, really.  and numbrs wont be uniform.  clusterd around 0.99 and 1.00 etc
+            - dont aggregate by searchable numeric items
+      - searchable_coordinates_min_miles     ---------  same as numeric.  this should be rebalanced automatically.  but initially, use this schema value.
+            - dont aggregate by searchable continuous items (like coordinates and numbers, and .... ?)
+      -
+
+
+
+
+    - ]
+
+~ getSortableFields(isDescending)
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+sept 30
+
+
+WHY DOCID HAS TO BE DOCIDOFFSET FOR SORTER
+index is docId. .... this has to be offset. -- WHY ?????? -- docIdOffset = (docId - (shardNumber - 1)*max_docs_per_shard)
+  //look.  docIds are stored in the invids with 3 bytes.  so 16M maximum per shard.  but we're not using any shard offset currently, so that's actually 16M per collection.
+  //  // why would we need docId offset for sorter? OOOOOOHhhhhhhh - the reason is becaue docId is used as the SORTER vector INDEX.  so the first value has to be 0!!!!!
+  // that's why we need docidOffset for sorter duh
+
+another bit of confusion from yesterday:
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! -->  SORTERS ARENT SORTED <-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+the "sorter" is a vector of sorting values INDEXED by docIdOffset!  so docIdOffsets are increasing from 0
+
+so there's no such thing as a "sorterDescending" vs "sorterAscending"
+
+~ use sorter in query
+
+TLDR: a ferret has to contain ALL INDEXES for a given shard:
+    // let sorter = readSovabydid(indexName: &str, shardName: &str)  // not just 1 sorter per collection!  sorter must by named by its field ... wait that's the same as index...
+    // shit ............ shit shithisthisthisthishitshitshithisthisthfidfasdf
+    // we CAN"T sort in a ferret.  cos a ferret is one index's shard.  that's one FIELD's index's shard.
+    // we're not even QUERYING a sortable field for now ... it's something that has to get applied to the OTHER FIELDS"S MATCHED DOCUMENTS.  ... AFTER their intersections.
+    // this is potentially very bad ... it means that ferrets have to return their ENTIRE intersection .... cos the lowest relevance match might be the highest sorted match.
+    // this seems untenable for aws.  alternatively, all ferrets for a given shard could be on the same machine.  this is a better approach than splitting off indexes anywhere.
+    // that means it's one PROCESS that searches all hte indexes on same-machine for a shard. and that process gets a poitner to everyone's full intersections.  to sort by the sorter.
+    // so then, each shard can return their own page1.
+
+https://trello.com/c/ZRdyd08O/54-optimize-sorting
+to optimize sort sorting maybe:
+  instead of having just 1 sorter vec, have several boolean sorter vecs for buckets of sort level.  cos we have to get the sorterValue for every single doc in the intersection.
+  instead of getting ALL their sortValue and then sorting ALL of them, we could just first do a sweep of all docIds to determine isInTopSortingBucket or not
+  - but this seems wasteful - we'll have to iterate over all the docIds mlutiple times ...
+  - instead: get ALL the docId sortValues.  theres no way around this.  but dont sort entire thing.  somehow get the the top bucket, and then just sort that.
+  - maybe sample every 1 out of every 10 sortValues and guess what would be good bucket cutoffs from that.
+  - ooo we can analyze the sorter distribution during indexing.  and write these sort bucket cutoffs to the db.  then use them during querying/sorting to only sort the top results (by sorterValue)
+
+- a doc might not have a value for one of the collection sorter fields.  so, when that doc gets indexed, it's not going to expand the sorter vector.
+    -- that's no good.  cos then during sorting, sometimes the sorter wont be big enough.  and sometimes it'll return bogus values.
+    --> every indexed document needs to contribute to the sorter.  is there NaN values we can use??
+          YES!   f32::NAN  :)
+          - so we have to check this during sorting??? ineficcnet...???
+
+o NO: display all fields in search results for now
+X ? we cant use max relevance.  it results in trash results. lets add
+X display fields in consistent order in results hits
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 1 !
+
+finished w/ sort??
+
+v 0.0.6 prefix !!!!!!
+
+- during indexing, take each cookedTok, and generate a list of all the prefixes.
+  - for each prefix, index it w an invind and locations array etc just like normal
+  - add a prefix toggle value to the collection schema per field
+  - NOTE:  actually it cant be like normal.  prefixes have to be separate somehow.  becuase the query can configure whether to use the prefix search or not, per field. per token placement (last, all, etc)
+
+- during query, check the query object to see if we should apply prefix search to a given field's token.
+  - prefix first, all, last, none, etc.
+
+prefix finished! working.  code getting very dirty tho
+tomorrow: bulk indexing.  to check performance after these new features.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 2
+
+designing endpoints:                            https://trello.com/c/L7UPkDTX/46-user-facing-sql-ish-endpoints
+
+bcbg.worp.cloud/?q="mens red"
+bcbg.worp.cloud/?q="mens red"&f=title,description
+bcbg.worp.cloud/?q="mens red"&f=title,description
+bcbg.worp.cloud/?delete=fiw734yr&secret=fwiuefi7efy8682y3r
+bcbg.worp.cloud/delete/?docId=fiw734yr
+bcbg.worp.cloud/delete/?q="mens red"&f=title,description
+
+squirrel vs owl endpoint notes:                 https://trello.com/c/m0PsU78G/29-run-as-servers
+
+the point of this is to prepare for aws
+should we have 2 domains per account? (NO)
+- `lacoste.worp.cloud` - for queries
+- `m.lacoste.worp.cloud` - for updates
+point to same machine, different ports.
+  con: complexity for user
+  pro: save memory on ec2.  cos the alternative is requiring 2 open endpoints per request.  one public-facing, and another one internal.
+although .... the main query endpoint could receive everything, and just pass 'modify' requests along to a different internal server.  this would require 2x connections for modify requests only.  which will normally be a trivial fraction of usage (except for logging service...)
+i think being user friendly is more important than a tiny memory save rn.  but will this pattern get locked in?
+let's just take the memory hit.  we can be dynamic on the back end.  like for logging, when we detect that most of a Customer's requests are `insert` requests, we can switch the primary endpoint to be the squirrel rather than the owl.  and then the squirrel can just forward query requests to the owl instead of the other way around
+
+OR
+
+- `delete.lacoste.worp.cloud` - for document deletes
+- `insert.lacoste.worp.cloud` - for document deletes
+
+^ NO.  too likely to accidentally delete
+
+---
+
+NOW: bulk indexing
+
+HOW ARE PREFIX LOCATIONS HANDLED?
+
+they're currently all dumped together.  this is wrong.  we need special prefix_locs arrays.  wait or do we ...
+yeah we do.  cos otherwise, "is" would get highlighted in "island" for the query "is this real life"
+- actually .... we dont.  it works fine right now. i dont really understand why.  code becoming a mess.  needs cleanup and better documentaiton somehow.
+
+back to BULK INDEXING
+
+~ generate file containing js docs per line
+
+EOD:
+  making good progress. i think bulk index is working.  testing with more prefix combos.
+
+- learn about rust tests next time bored. start writing them
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 3
+
+X use specific owl rdbs instead of "data"
+  - locations:   (1 per document-field-token) ("token" here includes prefixes))
+  - sovabydids:  (1 per sortable field)                this is an array of sort values indexed by docId  (sortValueByDocId)
+  - sodidsebus: (1 per sortable field per bucket)     these are HashSets of docIds clustered into buckets, descending.  so popularity_$_1 is a set of the docIds with highest popularity. popularity_$_10 docIds have lowest. (sortedDocIdSetBuckets)
+  - documents:    (1 per document)
+
+make sure we use the moneyscore delimiter (_$_) instead of just underscores everywhere.
+
+~ use bucketed sorters (sodidsebus)
+
+  - but how????
+
+  - so, when a document is indexed, its sort value gets added to the sovabydid.
+    - after that, we need to convert the sovabydid to a vec of (docId, sortValue) tuples, and sort that by sortValue.
+    - then split that vector up into 10 equal chunks.  for each chunk, put all its docIds in a sodidsebu
+
+  sodidsebus: and then how to use them?
+
+  - during querying, we get the total list of intersected invinds.  as a list of docId,Rel tuples i think.
+  - scan that list, and for each docId, check and see which sodidsebu it's in.  then put it in a respecitve iresobu (intersected result sort bucket)
+  - then for each iresobu (bucket), sort it and take all the results u need to fill up page 1, then continue to next iresobu
+
+
+
+
+........
+
+        m__docId_hitFields.entry(docId).or_insert_with(Vec::new).push(fieldName.to_string()); //can we deal w/ this later?  just for page1?  is there ANY other way to determine what fields were responsible for a doc hit?
+        // the alternative to doing this now is putting the shardsResults in a map with key: field.  then after sorting, we go back to this map, and scan the shard results for the docId.  that seems words
+        // other alternative is just re-searching the page of results. and seeing what lights up.  reading rdb objects should be fast since/if still cached?
+        // wait no ... u can't "search" a single document... would require another index ... oh wait we could just check the documents' locations objects.
+        // but we'd have to check ... well just the query tokens... check if rdb key <docId>_<fieldName>_<cookedTok> exists.  if so, it's a hit.  maybe that's faster than building m__docId_hitFields ?
+          // seems like it would be.
+........
+
+--> ended up ditching sodidsebus.  its much faster to read the sovabydid in the core intersection function and just keep track of the top results by sort values
+
+TODO - keep the sort value with the tuples that get returned?  to sort with in-tuple vlaue instead of looking up inthe sovabydid again
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 5, 6, 7
+
+future encoding optimization:
+- keep token maps.  one that's length 256, and one that's length 256^2
+  - fill both with the 256 most common toks, and the 256^2 most common toks
+  - so if u have a tok that's 3+ chars long, u know that it's just encoded normally. utf8 string char etc.
+  - this should b fairly dramatic reduction in indexes size.  make the token keys up to 1/3 the size. and since we have lots of stuff like locations which needs an object per tok per doc, a lot of the data size will be from tok encodings.  so maybe reduce index by up to 1/2 or 1/4 ???
+- what about phrase index compression/optimization?
+  - if a 2-word phrase tok is 2 bytes, u know each tok is 1 byte
+  - if a 3-word phrase is 3 bytes, u know each is 1 byte
+    - if a 3-word phrase is 4 bytes... ?
+  - ^ not totally sure this works
+
+phrase searching. --- after reading and thinking -- plan: just index 2-word and 3-word phrases.
+
+X split query by quoted content
+    - https://github.com/emctague/comma
+    - https://github.com/tmiasko/shell-words
+    - ✨https://docs.rs/shellwords/1.1.0/shellwords/fn.split.html✨
+        - first, check if there's an odd number of double quotes. if so, delete the last one. (google seems to do this)
+
+X index 2-word and 3-word phrases
+X handle 3+ word phrases by splitting into 3-word phrases,  conjunctive
+X bulk index (support query matching)
+
+X spike: how do prefix locations get written to rocksdb???  (have to write prefix locations separately)
+
+X dont do prefix search if qurey ends w/ space
+X prefix search not working - problem was not merging prefix ii w normal ii correctly (was just concating wchihch ruined docId order)
+
+
+X v0.0.11_exclusion-query
+
+X how?  - could be multiple excluded queries
+  - answer: after getting a single intersected docId, run it through all the exlusion ii's which will also be sorted by docId. 💥
+
+X parse query for exclude tokens
+    - how?  easy 💅
+
+what's next ... deleting a doc ugh
+
+X remove a doc by id
+    - have to clean out document traces from:
+      - invids1, 2, 3, prefix
+      - locations, locations_pre
+      - sovabydids
+      - documents
+      ----- other?
+
+--------
+for tomorrow!
+
+https://trello.com/c/cmeuhBJz/45-search-all-fields-non-indexed-fields-dont-prefix-sortables-rm-sodidsebus-write-numdocs-fix-bugs
+
+~ currently u have to specify the field u want to search in.   be able to search all fields.
+
+~ b able to add a document and only index specific fields (with schema, isSearchable or something)
+
+~ make sure sortables aren't getting prefixed
+
+~ delete sodidsebus
+
+~ write numDocs to meta per indexing.  stop counting, takes forever
+
+~ fix x..y.len()-1 instances .... dont subtract 1 for vecs..... it's exclusive "to" bound
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 8
+
+X use struct to parse schema json.  need struct for updating values and re-writing as json (i think.  )
+X design query struct object
+X get all searchable fields
+X think through the schema update process in collection creation and doc indexing .... when to add new fields ...
+X allow no-prefix indexing for a field (like categories ...)
+X dont split numbers in tokenize !
+X fix prefix bug
+X write numDocs to meta per indexing.  stop counting, takes forever
+X update bulk upload and delete functions for schema/query structs
+X get field info like sortabiltiy, searcabilit, prefixability -- from SCHEMA.  not from rocksdb.
+    - extra improant forbulk indexing
+X update doc delete function
+
+
+
+
+{
+  num_results_per_page: 8,            // default to 10
+  page_number: 1,                     // default to 1
+  queries: [                                  // default to []
+    {
+      query: "what im searching for",           // default to "*"
+      fields: ["field1", "field2"],              // OR fields: ["*"]  // default to ["*"]
+      prefixLast: true,                           // defaults to true
+      collection: "c1"                          // defaults to the user's only collection
+    },                                 // default to []
+    {
+      query: "somethign else"
+    }
+  ],
+  worp_id: "fowiefiauwhe7fyawf"
+}
+
+
+
+~ run as servers! https://trello.com/c/m0PsU78G/29-run-as-servers-v0014
+
+okay we added ferret.rs and owl.rs as server examples
+how to structure queries/endpoints?
+we need endpoints for all of these:
+   1 createCollection
+   1 deleteCollection
+   1 indexDocInCollection
+   1 deleteDocInCollection
+   1 indexBulk
+   2 queryClxLocal
+^ using 2 endpoints, (1) and (2)
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 9
+
+ok no do server later.  first let's figure out why indexing is slow.  and the new parts of queries.
+https://trello.com/c/T8DwNsWR/65-optimize-query-and-indexing
+
+ok what to do first ......
+
+X queries - why so slow? optimize this. do bulk upload to test
+    - iterateQFields culprit
+
+X bulk index is much faster after avoiding unnecessary schema reads from disc :)
+
+~ normal indexing
+    - i think this takes a long time cos it's looking for unused docIds.  so we should use the docId graveyard again. ?
+    - no not true
+    - okay:
+      - the reaso nnormal indexing is so slow is because it has to walk up all the ii's (prefix, normal, phrase2, phrase3), to find where to insert the new docId.
+        - cos it could use a docId from a previously deleted doc, that's not bigger than all the rest.
+      - this is kinda unsustainable it's so slow.  couldn't be a logging tool as is.  would have to stash all the index requests and do bulk index periodically.
+      - so we should make a fast-index function i think.  that just uses the next biggest docId and puts its values at the ends of all the existing ii's.
+      - and then have a "reindex collection" function that just starts over.  deletes all the indexes.  keeps the docs.  renumbers and re-indexes them.
+        - is this a job for now or later .....
+        - wait cant we already do this just by bulk indexing a single doc ... ?
+
+  REINDEX COLLECTION:
+    - would we have to totally reindex?  or could we keep a lot of stuff and just change the docIds.... like locations
+    - well maybe have a "reshuffle" function that just changes the docIds per doc, and just does the minimum changes for that.  idk exactly what that would be.
+
+~ use docId graveyard
+    - no not necessary
+
+X index bulk single doc
+    - much faster ... 1.5 sec instead of 30 sec.... i think something else is wrong w/ normal index fx ...
+    - maybe pass around rocksdb objects in indexDocFieldValue_worker?
+        - yeah ... indexing should pass around dbs more.  cos indexing is a single-thread process.  no (?)
+
+
+- future query optimization
+    - the main perf bottleneck is object read time.  i think read time is p linear re object size.
+    - so -- split up invinds.  for a given token's ii, split it up somehow.  like "apple"'s ii could be split into:
+        - "apple with another word that starts with s"
+            - ... no that doesn't work... they need to be split up mutually exclusive. no overlap. so they can be easily combined for intersection
+            - otherwise the index size would explode.
+            - maybe store a version of ii w/out relevance? for custom sort where it's not that important anyway.  that could shrink sorted file read by nearly 1/2 maybe.
+            - hmmm nevermind maybe.
+
+done w/ optimizing https://trello.com/c/T8DwNsWR/65-optimize-query-and-indexing
+
+starting https://trello.com/c/m0PsU78G/29-run-as-servers
+
+~ run as servers
+
+okay we added ferret.rs and owl.rs as server examples
+how to structure queries/endpoints?
+we need endpoints for all of these:
+   1 createCollection
+   1 deleteCollection
+   1 indexDocInCollection
+   1 deleteDocInCollection
+   1 indexBulk
+   2 queryClxLocal
+^ using 2 endpoints, (1) and (2)
+
+ok so now we just have 2 species.  the owl, and the squirrel.  the owl handles queries.  the squirrel does eveyrthing else.  creating/updating/deleting the library
+
+the tricky thing is this ... we cant be updating the owl's live library.  i think that'll screw up its readonly connections.
+
+should we test this again?  or just assume. dont need to test.  we cant run queries on a db that's changing.
+
+after a squirrel task, the entire db will need to be tripled.  squirrel has a copy, owl has a prev copy, owl has a new copy.
+
+how to move owl? owl needs a function/endpoint "resetRdbsToLatest"
+
+"resetRdbsToLatest" will look in some parent dir for the newest dir that's a random name followed by "_ready" like "fsidhfiuyowefuhfksdf_ready"
+after a squirrel job is complete, the squirrel copies the rdbs to a new dir "fsidhfiuyowefuhfksdf" and then suffixes the dir name with "_ready" when the copy is finished.
+so owl doesn't need to know the exact name.  just move to the newest "..._ready" dir
+
+do we have to?
+  - yeah. even if opened new rdb cnxn per request .... cant query a cahnging db.  and we cant just pause queries until the db's ready.  that could stall/lock up the whole system
+
+let's call it the ferret instead of owl.  a ferret just ferrets something out.  a wise owl will be used in the future for splitting up complex distributed queries.
+
+2 endpoints - ferret and squirrel.  start w/ ferret. submit squirrel stuff manually via "cargo run ..."
+
+this is kinda like before ...... is it exactly like before? ?????????  yeah i think so???? just need to update ferret.
+
+startFerret should accept dbs root dir? and port of course.  hmm how are dir locations handled normally .....
+
+
+
+~ what server service to use ???? hyper? reqwest? other?  read over dinner
+    - warp.
+
+- okay i'm able to use warp to read the body as a string.  next, parse it as a json "value" and iterate through the key/value ... can i do that w/ variable value types... ?
+    - yes.  "Value" holds an object of various types.
+    - next: put the query in a warp service.  now that we can read the json as a string.  we're ready!
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 10, 11, 12
+
+NEVERMIND: let's go back to using "owl" instead of ferret.  an owl is what users interact w/. an owl can have NO downtime.  later, ferrets will be used behind the scenes.
+
+b/c an owl can have no downtime.  while Owl is running queries herself, she cant be restarted for new library.
+
+wait maybe ferret makes more sense.  now ferret can have no downtime.  but in future, when managed by owl, ferret can be more flexible.
+a ferret is what ferrets things out of a single burrow.  an owl performs complex queries w/ lots of ferrets.
+
+----
+
+ferret can't use map of shardId to rocksdb.  because the target burrow could change during a query.
+it needs a map of burrow to rocksdbs.  and at the beginning of a query, determine which dbs to use.  but i think there's only 1 right now.  for ferret.
+dirs:
+BURROWS - this is a dir of different burrow dirs.
+    after a library update:
+      - a new burrow gets sent to the ferret.
+      - and ferret's static CURRENT_BURROW_DIR path gets changed.
+      - and rocksdb is opened to the new burrow, and added to a map that the ferret can access.
+
+so the next time a query happens, Ferret uses the current burrow dir to grab the current db.
+
+but wait .... can there just be a CURRENT_ROCKSDB db var?????????????? and ferret determines this at the begginning of each query.....
+    - yeah why not?  much simpler .....
+
+ok so...
+
+    after a library update:
+      - a new burrow gets sent to the ferret.
+      - and ferret's static CURRENT_BURROW_DIR path gets changed.
+      - and rocksdb is opened to the new burrow, and added to a map that the ferret can access.
+
+- use concept of "vintage" to distinguish different library versions.  when squirrel updates library, that new library is a new library vintage.
+    - do this isntead of using "burrows" to refer to different libraries.  a burrow is an ec2. not a library of data/collections/indieces/ etc
+- include the vintage in a shardId.  this will allow the ferret to get the correct rdb cnxns per query.
+- confused:  how does shardId point to specific rdb location for collection rdbs that dont have the same file pattern?
+
+
+no. trash "vintage" idea.  use "version" isntead.  specific to a collection.  use version in shardId
+well let's still call it "vintage".
+
+collections
+  c1
+    vintages
+      fwiuehskdjfksjdf_ready
+        documents
+        indexes
+        locations
+        meta
+        sovabydids
+      srifhsfjfsdfsdfhj_ready
+        ...
+      awoeifjasdkjfdf_ready
+      aoifasdfjsdkf_ready
+  c2
+    vintages
+      fwiuehskdjfksjdf_ready
+      srifhsfjfsdfsdfhj_ready
+      awoeifjasdkjfdf_ready
+      aoifasdfjsdkf_ready
+
+~ we need a better word than "shard" to describe rocksdb parents that aren't actual shards.  like the "documents" or "sovabydids" """"shards""""
+    -... blob?  block?  brick?  pile? mound?  sconce?
+
+~ bulk indexing for large docs is way to slow.  for 5kb doc, it'70s 4 docs per second.  so that's 7 hours for 100k docs.....
+- so to index all of wikipedia ... 10 M pages ... 70 hours ... 3 days :/ ... 1 billion? about 1 year ... on 1 machine
+  - but can this be split into shards .... ? .... yes
+- for a totally huge index, the main owl db would have to be split up anyway .... can't put 130 trillion docs on one ec2 ... i dont think ...
+
+1.3M Trilobytes needed to store 130 trillion 10kb docs.
+maximum ec2 is 16 TiB
+
+
+~ how big are the generated indexes from 2000 5kb docs?
+    - 150 MB!  the docs alone take up 10 MB.  so index size = x 15 .... not terrible.  this is include 2x and 3x phrases indexes.  and prefixes.
+    - but in prod we'll need 3x this .... so 45x the docs size ... hmm.
+
+    - 100000 docs @ 10kb each ==> 1 GB
+        - so index size = 45 GB = $4.5/mo
+        - but algolia would charge $100/mmo for this
+        - and $4.5 is the worst case.
+        - but we CANT just store the docs and re-index on the fly.  cos takes 0.25 - 0.3 seconds each.
+        - so we CANT just store the docs in wasabi and re-index whenever.
+
+  - writing locations takes the longest
+  - the actual indexing goes slightly faster.  2nd slowest thing.
+  - need to research if the locations vecs are actually necessary.
+    - how long would it take to just search all the page1 docs for all the query tokens?
+        - this might not work tho ... cos using cooked toks to search amongst rawtoks????
+        - what if we stored doc as Vec of (cookedToks, location) .... then searched those vecs for the query cookedtoks ...
+          - well that's still saving all the locations ... but maybe writing in 1 single file is faster? idk .... doesn't seem significant.
+
+X see how much time it woudl take to not use locations vecs.
+    -  adds about 5 ms to drop the current locations objects and replace with 1 locations map object per doc field.  should cut total storage size in half. and should speed up indexing significantly.
+    https://trello.com/c/R041Ryyu/73-rework-locations
+
+now back to server ... we need squirrel AND ferret as servers.  we need immortal ferret.  which means ... (continued below)
+X squirrel: build endpoints for:
+                                create-collection,
+                                index-doc,
+                                index-doc-bulk,
+                                delete-doc,
+                                delete-collection
+X squirrel: copy collection to new vintage after modify.  mark the vintage as "_ready" once finished copying.  this "_ready" means it's ready for a rdb cnx to be opened.
+      - but "_ready" doens't necessarily mean that it's rdy to b queried, cos maybe the db cnx isn't opened yet. how to know when that happens?  just check in every query for now?
+      - ferret query fx:  get the freshest vintage THAT HAS OPEN CONNECTIONS IN THE DB MAP
+      - ferret is responsible for noticing a new vintage and switching over to it.  delete the old one when appropriate
+      - this means we'll have to do a little housekeeping per query.  should be less than 5 ms.  should usually be less than 1 ms.
+
+
+
+(it took about 2 seconds to copy 150 MB - that's for 2k docs.  so 20k docs would take 20 seconds? 100k take 100 secodns ?????? that's terrible ... we'll see
+(no - copying 1.5 gb (20k docs) took 3 sec .... so 100k docs should take 15 sec ... not great, but okay)
+
+- wait ... total storage size isn't db x 3 .... the ferret only needs the invinds!  which is ... well pretty big.  about 8 times bigger than docs dir.  but smaller than current locations.
+              - locations db only need 1 copy of that ... so maybe reworking locations isn't a priority rn ...
+
+X finish publishNewVintage
+X test running it after basic squirrel fxs
+X ferret immortal
+  X use new vintage only if in cnxs map
+      X if not, open it and add to map, then use an older one
+
+X build squirrel endpoints
+    X call publishNewVintage at the end of each one
+    X except delete collection .... how do we do that .... to delete collection, squirrel can just delete that collectionRoot under the squirrel's clxnsRoot
+
+
+NOTE: we have to actually add specific vintages to M_ROCKSROOT_DB -- if we wipe the whole thing and start over, it ruins the query obv
+
+NOTE: instead of putting "_ready" when a vintage is ready, we tag it with "_busy" UNTIL it's ready.
+
+X only delete old vintages that are older than t (say, 10 seconds for now) -- but does that help anything
+
+~ server responses as json
+    - mainly the ferret response.  put the hits in a json object/array.
+    - how to design?  follow ES/aloglia?  or design from scratch...
+    - how to build? need struct w/ lots of optionals i think ....
+    - get max relevance of all hits in response ... wait but why. ignore this for now.
+
+~ test endpoints
+
+designing the response:
+
+WORP:
+{
+  "total": 111396,
+  "hits": [
+    {
+      "id": 63098,
+      "score": 1,
+      "source": {
+        "line_id": 63099,
+        "line_number": "3.3.14",
+        "speaker": "SHYLOCK",
+        "text_entry": "Ill have my bond; and therefore speak no more."
+      },
+      "highlights": [
+        {
+          "field": "text_entry",
+          "snippets": [
+            "my <em>bond</em>; and",
+            "speak <em>no</em> <em>more</em>."
+          ]
+        },
+      ]
+    },
+  ]
+}
+
+
+
+ELASTICSEARCH:
+{
+    "took": 16,
+    "timed_out": false,
+    "_shards": {
+        "total": 5,
+        "successful": 5,
+        "failed": 0
+    },
+    "hits": {
+        "total": 111396,
+        "max_score": 1,
+        "hits": [
+            {
+                "_index": "shakespeare",
+                "_type": "line",
+                "_id": "63098",
+                "_score": 1,
+                "_source": {
+                    "line_id": 63099,
+                    "line_number": "3.3.14",
+                    "speaker": "SHYLOCK",
+                    "text_entry": "Ill have my bond; and therefore speak no more."
+                }
+            },
+            {
+                "_index": "shakespeare",
+                "_type": "line",
+                "_id": "63101",
+                "_score": 1,
+                "_source": {
+                    "line_id": 63102,
+                    "line_number": "3.3.17",
+                    "speaker": "SHYLOCK",
+                    "text_entry": "To Christian intercessors. Follow not;"
+                }
+            }
+        ]
+    }
+}
+
+
+some financial calculations...
+
+compared to raw input docs size, i think squirrel index size is 8x, and total sq + 2 ferrets is 20x.
+so for 100k 5kb docs, the total size should be exactly 10 gb.
+the compressed size needed to transfer to another ec2 would be 6x = 3gb = $0.06/intra-aws-region transfer.
+so we could do that 30 times per month and it would still be cheaper to use spot isntances than on-demand t3.nano. (slightly)
+but the instances would probably all last much longer than 1 day.
+i just started a t3.nano instance around 12:30 AM oct 12 for $0.006.  but the current price is 0.0019
+
+^ but this is for assuming there's just 1 customer per ec2.  combining large customers on ec2s could lead to higher ebs volumes and greater transfer costs
+
+q.npr.worp.cloud/?q=wow%20cool&oa=date
+
+npr.q.worp.cloud/?q=wow%20cool&oa=date&id=234 - i THINK this works.  if not, we'll use npr.worp-q.com
+
+"npr" here is the ACCOUNT name.  or WORP DATABASE name.  (WDB) a WDB can have multiple tables/collections.  a wdb query will query all the searchable fields in all the tables
+--> SO THAT MEANS that query response NEEDS to specify what table the results are coming
+--> NEVERMIND. this is too confusing!  do we separate results by table?  or we report all results together, and list the table per result?  need to study how algolia and ES do this and what makes msot sense.
+FOR NOW - just have 1 table per wdb.  there's no engineering/searching benefit to combining tables in a single wdb afaik.
+
+
+why does algolia use all this?
+x-algolia-agent: Algolia for JavaScript (3.35.1); Browser (lite); react (15.6.2); react-instantsearch (5.7.0); JS Helper (2.28.1)
+x-algolia-application-id: O2DG6462XL
+x-algolia-api-key: 40f2ee3bc56fa66dd5551ca1496ff941
+seems like a stupid waste ... it's all public anyway ...
+
+oh but we DO need to require a private key to MODIFY operations.
+put this in the request header? cos we'll have to encrypt it anyway.  so we can do bulk imports using ndjson instead of an array w/in a json
+
+TODO:
+
+~ query response as json
+
+- question: say u have a query string q of 2 words.  if one word is in 1 field of a doc, and the other word is in a different field of the same doc, should that doc be returned???
+      - i've been assuming "no" -- algolia assumes "no" also - https://news.ycombinator.com/item?id=15278883 search for "standardizes gopher"
+      - cos this doens't find that article: https://hn.algolia.com/?dateRange=all&page=0&prefix=false&query=standardizes%20gopher&sort=byPopularity&type=all
+
+- waidrn
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 15
+
+X finish phrase matching: https://trello.com/c/GGuMyWoN/71-highlight-entire-matches-v0017
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 18
+
+~ https://trello.com/c/yv7Js1aI/74-advanced-query-request-settings-v0018
+
+~ TODO send collection name in request body, not url param
+
+configuring highlight sizes/numbers is being a real pain.  really need to start thinking on this from scratch maybe.  and/or just copy how algolia/ES does it.
+-- supporing minContext, maxContext, AND max_total_chars is maybe too complicated ......... ?
+
+- still working through highlights. making progress understandingthe process i think
+
+- highlihgts is done i think.  supporting arrays now.
+
+X end locations for phrases is wrong.  dig in to phrase matching.  test compound/parentPhrases etc
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 20
+
+X https://trello.com/c/llfAyzTR/87-update-ferret-per-rdb-change-and-use-removerocksdblogsold
+
+~ https://trello.com/c/Y4CFL0fW/96-change-file-structure-shardify-sovabydids
+
+ok here's what we need to do:
+
+~ replace shardId with rocksId
+~ rocksId is built from part of the db file path
+~ split sovabydids into shards.  store in shard dir
+~ dont use collection name in index name. indexName = fieldName only
+~ use dir structure:
+
+
+- clxnsRoot                     ("collections")
+  - collectionParentRoot      ("my_collection")
+    - vintages
+      - vintageRoot
+        - main
+          - documents
+          - locations
+          - meta
+        - shards
+          - 1
+            - invinds
+              - f1
+              - f2
+              - s1
+            - sovaybdids
+          - 2
+            - invinds
+            - sovaybdids
+
+~ new plan: force vintage and collections root inputs whenever getting any dir or rocksRoot.  leaving them out and assuming defaults is trying to be cleverer than clear.
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 21,22
+
+~ https://trello.com/c/Y4CFL0fW/96-change-file-structure-shardify-sovabydids-v0020
+
+X aggghghhh since sovabydids are sharded now, we cant have a single main sovabydid at main.  have to pass back the sorter values with the multiIiIntersection results.
+
+X update highlight obj array for ross to:
+ [
+          {"is_match": true, "text": "hey "},
+          {                  "text": "greg"},
+          {"is_match": true, "text": " this is "},
+          {                  "text": "greg"},
+          {"is_match": true, "text": "ory "},
+          {                  "text": "amazing"}
+        ]
+
+~ test v0.0.20
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 24
+
+X fix bug, then
+X change highlights to a map like ross suggested -- supports both now
+
+- okay, v0.0.20 is done.  which means bulk indexing is broken.  and delete-a-doc.  and other stuff prob besides main stuff in v0.0.20.
+- next focus on getting parallel queries to work.  prob need the RwLock or soemthing -- not Mutex.  for parallel reads but with a single locking write lock.
+  - and prob/maybe have to use readonlyrocks?  yeah i think mandatory for parallel ...
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 25
+
+finished touchups v0.0.21, cors, hlt bugs.
+
+X next, need to test and make sure parallel queries work
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 26
+
+~ https://trello.com/c/h2MGDNeq/58-store-queries-display-in-time-graph-v0023
+
+X sharding seems to work
+X how to shard per time instead of per docId?
+
+
+/// isWorptail means this collection is a worptail collection aka used for logging.  that means each document gets a timestamp, and results
+///     come with rolled up timeseries aggregates.  worptail needs to return search results AND time graph data, but not the main worp search query analytics.  just need time graph for that ...
+///     So, maybe this should'nt be called worptail?  or maybe it is worptail but the search results can be conditoinally muted?
+
+
+  //TODO here -- if worptail, see if document has timestamp.  if not, add one now.
+  // or wait ... maybe accept variable timestamp field names?  like sorters.  maybe someone wants a doc w/ multiple timestamps some day??????
+  // yes let's allow graphing on multiple timestamp fields... cos why not.
+  //So in the fields section of the schema, every worptail collection needs at least 1 predefined timestamp field.
+  //  and that field needs to have an attribute: is_auto_generated.  if this is false, AND if user does NOT submit a timestamp for it when indexing a doc, then index operation FAILS.
+  //  no actually let's have 3 settings: always_auto_generated, auto_generated_if_missing, always_user_supplied.
+  // the default setting should be auto_generated_if_missing -- cos this is the most flexible, user-friendly.
+  // how to define a field as being a graphable timestamp?  is_graphable_timestamp
+
+  X if new collection is worptail AND no is_graphable_timestamp field is found, then add 𝒲timestamp field, and set it to always_auto_generated
+  X how to return timeseries data from multiIiIntersection?
+    : add a new response object to the multiIiIntersection response tuple.  return the map m_binName_count<String, usize>
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 28
+
+X check and see if normal collection works normally even w/ the worptail code inserted everywhere
+
+X try creating a new collection as a worptail collection.  we should automatically get the time series data back in the responses. ???????
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 28
+
+new query field : log_this_query (defaults to true )
+if log_this_query:
+    do index the query doc to <collection>_hiddenQueryCollection
+        - and that's it?  the index function should update the ferret's vintage etc
+
+X   automatically create the <c>_hiddenQueryCollection collection when creating a collection (with a parameter to trigger/prevent this)
+no: make browser-url-bar-friendly endpoints for querying and indexing docs.  for easy testing of this ticket.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 30
+
+X write to scribe's queue
+no: use notify to watch for new vintages!
+    - no
+
+X okay ... vintner all set up?  how to test?  need to try ... just do both normal and HQC and see if old vintages get deleted or not.  and new ones get queired from
+    - i think it's working fine !!!!!
+
+----
+ok i think scribe should be the process to index all docs.
+
+and replace Q__WRITING_TASKS with Q__WRITING_TASKS
+
+so the ferret just needs to submit a doc based on the query and timestamp, sent to the c's HQC
+
+so if scribe's doing all the indexing ... does it also write to billingMetrics rocksdb? .... yes i think so. so scribe can keep open all the squirrel dbs ??? just keep opening/closing per fx for now. it's okay if its slow for now.
+
+then billing metrics will get copied to ferret vintage. so ferret can just read them like a normal query kinda.
+----
+
+ok scribe is now like squirrel from the ferret!  maybe rename "ferret" to just "...worp?"  and rename "scribe" to "squirrel" ?
+so squirrel would be a polling process/thread instead of endpoint
+
+test current setup.  a query should increment billingMetricWrites to the meta db.
+
+
+? make convenience endpoints: query and write as GETs ?  eh but what's the point.  ross' website switches are good for testing
+
+vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv          START HERE:
+~ make endpoint: get billing metrics (both reads and writes)
+~ make endpoint: index document!!! now that the scribe is set up!  should be easy.  just pass it along.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+and then what?  general tidying up i think??? all basic functionality done??
+
+oh ... one reason to put squirrel and ferret at differnet endppints is to specify thread priority.  so squirrel gets lower priority.
+can we still do that from same endpoint?  idk ... dont think so?  wait mayeb we can easy? https://docs.rs/thread-priority/0.2.0/thread_priority/
+
+then cleanups/updates/validation and then ec2 stuff!
+
+
+after shower todo notes:
+
+endpoints to:
+
+~ RE-INDEXING:
+  ~ change sorter fields (return list of docs with invalid sorters)
+  ~ change prefixed fields
+  ~ change searchable fields
+~ get total indexed data size for collection
+~ get doc by docId
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+oct 30, 31, nov 1
+
+also:
+~ error handling for endpoints
+~ account dir
+~ optional collection name in request body (cos url will have collection name and account name!  stories.npr.worp.cloud)
+~ optional account    name in request body (cos url will have collection name and account name!  stories.npr.worp.cloud)
+      - account name = wid.  make these optional later, once subdomain stuff is working
+
+
+X figure out url query params in warp.  rn seems like fixed param names?  can we get variable ones?  or need to parse manually.. https://users.rust-lang.org/t/using-hyper-how-to-get-url-query-string-params/23768
+      - yes! https://github.com/seanmonstar/warp/blob/master/examples/query_string.rs
+X make endpoint: get billing metrics (both reads and writes)
+
+
+?? if i have a bunch of user metrics, do u think it's better to store those in cognito?  or have a dedicated users table elsewhere (in dynamodb in this case)?
+-> answer: use dynamodb instead:  https://www.reddit.com/r/aws/comments/ad8arj/q_what_is_the_best_way_to_store_user_data_aws/
+
+added new endpoitns:
+
+http://localhost:3131/query?collection=c1&wid=npr&query=reality
+http://localhost:3131/meta?collection=c1&wid=npr
+http://localhost:3131/list_docs?collection=c1&wid=npr
+
+
+well shit .... metadb doesn't get copied into new vintage unless there's a new doc indexed.  dont wanna copy all data for every new billing metric!!!!
+so ... how to get actual recent billing metric?  i think we have to read from squirrel ... that means sending a message to the scribe asking for everything in the metadb.
+then what does scribe do w/ it? puts it in a mutex map, keyed by the request's rId (request Id).  so then the request polls the mutex until it sees its value, and then it deletes it and returns it.
+.....
+ugh
+MScribeResponses__REQUESTID_PAYLOAD
+
+^ done!  gets requests from scribe/squirrel now
+
+- figure out error handling soon before getting too deep w/ just strings!!!!!!
+
+
+X ACCOUNT DIR https://trello.com/c/DV9esfCh/115-account-dir-v0027
+
+  update all the getDir_ fx's in dirStuff....
+
+- all the dirStuff fx now have wid in fx signatures, but not used in references
+
+X test everything w/ new accounts dir????
+
+
+
+~ RE-INDEXING:                                                                  https://trello.com/c/VJRxtKDm/118-reindexing-v0028
+  ~ change sorter fields (return list of docs with invalid sorters)
+  ~ change prefixed fields
+  ~ change searchable fields
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+nov 2
+
+sort and unsort is done.  but to do prefix/search .... we basically need to reindex a ton of docs... that means bulk index!  but just of 1 field
+
+~ test bulk indexing
+
+~ adapt bulk indexing to re-index entire collection for a speicifc field
+    - build
+
+ok i think sort and unsort are working now using the bulkIndexing engine fx!!!!!
+
+now can we extend to timestamps
+
+and then prefix, and then sorting eveyrhtin?
+
+un/reindexing everything seems to be working!  and bulk indexing!
+
+next is to make endpoitns for them.  then:
+- getDoc, getTotalDataSize, deleteDoc, update removeVintageFromDbsMap, ensure timestamp for worptail collections
+-------------------------------------------------------------------------------------------------------------------------------------------------
+nov 3, 4, 7
+
+X https://trello.com/c/E8Gor3gT/124-getdoc-gettotaldatasize-deletedoc-v0029
+
+X deleteDoc
+X getDoc (readDoc)
+X getTotalDataSize
+    - how : fs_extra
+X removeVintageFromDbsMap
+
+
+~ https://trello.com/c/GeAuzNk9/121-endpoints-cleanup
+  - first, cleanup. delete all commented-out old code
+
+- made complete-ish testing commands in commands.fish
+
+ENDPOINTS - all of these !  with nice Result<????> returning objects to have messages to return from endpoints.  use "?"'s ???
+
+use scribe's topic queue for db changes !!!!!!!
+
+~ indexDocInCollection
+~ indexBulk
+~ deleteDocInCollection
+~ getCollectionDataSize
+~ createCollection
+~ setFieldAsSorter
+~ unsetFieldAsSorter
+~ setFieldAsTimegrapher
+~ unsetFieldAsTimegrapher
+~ unindexPrefixesOnly
+~ indexWithPrefixes
+~ unindexFieldInvinds
+~ indexTokensWithoutPrefixes
+
+~ update all existing endpoints to use fxs that return Results
+
+...
+
+see https://trello.com/c/GeAuzNk9/121-endpoints-cleanup
+
+https://blog.logrocket.com/json-input-validation-in-rust-web-services/ ?
+tryna fail on unkonwn json inputs ????? for endpoint
+data validator!!!! max len etc
+yay: #[serde(deny_unknown_fields)]   :)
+
+
+https://stackoverflow.com/questions/61013311/warp-rs-warprejection-and-error-handling-using ??
+https://github.com/seanmonstar/warp/issues/388
+
+
+- okay i THINK i've got errors figured out finally!!!!!
+
+- now time to actually implement all those.  shoudn't take long tho
+
+- test new main function and then use the queue from endpiont
+
+TODO debug this... maybe we cant put a result in the mutex map?  maybe put a tuple of strings inthere, and the 2nd string means its an error? or something,
+... or a tuple with a string and a boolean, the boolean is "isError" or something.
+
+
+~/r/w/worp-rust $ cargo build
+   Compiling worp-rust v0.1.0 (/Users/stuartrobinson/repos/worp/worp-rust)
+error[E0277]: `(dyn std::error::Error + 'static)` cannot be sent between threads safely
+  --> src/stateManagement.rs:36:1
+   |
+36 | / lazy_static! {
+37 | |   /// payload should prob be an http response object or something in case it contains an error?
+38 | |   pub static ref MScribeResponses__REQUESTID_PAYLOAD: Mutex<HashMap<String, Result<String, Box<dyn Error>>>> = Mutex::new(HashMap::new());
+39 | | }
+   | |_^ `(dyn std::error::Error + 'static)` cannot be sent between threads safely
+
+NOW:
+
+~ list collections endpoint
+
+
+X DELETE shouldn’t have a body. The parameters should be part of the URL (edited)
+X put ndjson in an array for bulk index
+
+X http://localhost:{}/get_data_size?collection=c1&wid=w1
+X http://localhost:3131/get_sortbys?collection=c1&wid=w1
+
+~ aggregate billing metrics per month in "meta"
+    ~ endpoint to retrieve data? or just get "meta" ?
+~ need "status" concept.... so user knows if the squirrel is busy or resting.
+  ~ how?  read this from squirrel.  before every squirrel operation, ... wait... shit. we can't read from squirrel
+
+
+closing the endpoints trello card.  next, do these items ^ --- make cards for them, add to trello.
+-------------------------------------------------------------------------------------------------------------------------------------------------
+nov 8
+
+~ security!??!?!??!
+
+~ scribe per collection!! not per main process ....
+  - what if collection is created or deleted??? we need to keep the handles for the scribes somewhere so we can delete/ add to them
+
+~ monthly billing values in meta
+  ~ this means - rdb object billingData -- a json object keyed by date string with objects per billing metric
+
+~ status
+  ~ use rwlock - not a file.  write object -- keyed by wid & collectionName (Value or JsonStr) with fields:
+      FIELD                     EXAMPLE
+      start_time_utc            iso formatted date
+      task                      indexFieldWithoutPrefixes
+      initialization message    4,325 documents to index
+      latest message            on indexing step for doc 1,265 out of 4,325
+
+~ test empty query and empty sorted query
+
+TODO start here:
+
+X https://trello.com/c/IJh8BNFs/101-empty-query-returns-all-v0031
+X deal w/ sorting w/ missing values:
+  //TODO have to deal w/ missing values here skdufhisuafsdhff DONT DELETE
+  // use descendingComparator_2ple ???
+X println!("sovabydid:: {:?}", sovabydid);    //TODO why is this so big???? dlfkjsiesoijfldk
+    X TODO later: https://trello.com/c/S3VsWya7/147-dont-make-sovabydid-so-big
+
+
+next:
+~ https://trello.com/c/0YhZuXys/136-aggregate-billing-metrics-per-month-in-meta
+-------------------------------------------------------------------------------------------------------------------------------------------------
+nov 9
+
+X https://trello.com/c/zTSiCBs1/148-replace-account-and-wid-with-project-and-pid-v0032
+X https://trello.com/c/0YhZuXys/136-monthly-billing-metrics-v0033
+
+
+fix errors:
+X collection already exists cos dir exists so i'm exiting now.
+X if query an empty collection
+
+
+X https://trello.com/c/ExVN0rB1/137-scribe-per-collection-v0034
+
+TODO
+
+STARTUP
+X fn startScribe() {
+    - should accept pid and collection
+X Q__WRITING_TASKS
+    - rename to M___PID_COLLECTION___Q__SCRIBE_TASKS
+    - and make it a map keyed by pid/collection combo
+X change :
+            let mut q = Q__WRITING_TASKS.lock().unwrap();
+    to:
+            let mut q = M___PID_COLLECTION___Q__SCRIBE_TASKS.lock().unwrap().get((pid, collection)).unwrap();
+
+SHUTDOWN
+X scribe task: RETIRE_SCRIBE
+
+- added some better sanity checks at start of endpoints
+- created samtarly - master scribe process to create new scribe when new collection is created
+
+now we're ready for collection/scribe status!
+
+X endpoint to read status
+
+X add these to all topics!
+
+      else if INDEX_BULK == topic {
+        setScribeStatus(pid, collection, requestId, topic, &format!("payload.len() = {}", payload.len()));
+        let res = indexBulk_ndjson(pid, collection, payload);
+        unsetScribeStatus(pid, collection);
+        respond(requestId, res);
+      }
+
+note to ross:
+
+implemented GET /collection_scribe_status?collection=c1&pid=w1
+
+sample output:
+
+```
+{
+  "topic": "DELETE_DOC",
+  "message": "",
+  "start_time_utc_iso": "2020-11-10 02:32:49.418505 UTC",
+  "start_time_utc_millis": "1604975569418",
+  "requestId": "e4fcc714-8b21-428f-8f50-0b745198d5c1"
+}
+```
+
+some requests take a long time, like bulk indexing and re-indexing requests.  currently, /delete_document sleeps for 10 seconds, just to try out this endpoint
+GET /collection_scribe_status tells you if the collection is busy working on stuff at the moment.
+
+UI:  probably... check this every few seconds?  and put a spinner at the top of a Collection Page if the collection is currently busy? otherwise a green checkmark, or nothing?
+-------------------------------------------------------------------------------------------------------------------------------------------------
+nov 9
+
+~ https://trello.com/c/MHHbn9yX/25-secrets
+
+X make hashing fx
+X make static global vars of hashes:
+  - RootSecretHash my secret rootSecret
+      "$argon2i$v=19$m=8,t=3,p=1$cGlua2hpbWFsYXlhbg$X0EX//XwZB/NB7Xn2+afYBuhSADKO7QoDFbqoJ2scb0"
+  - GlobalSecretHash my secret globalSecret
+      "$argon2i$v=19$m=8,t=3,p=1$cGlua2hpbWFsYXlhbg$y0EWp5BWabUrrQAvZC4WRuqeNEjSM+a5jO/RSId/3lQ"
+  - ProjectSecretHash my secret projectSecret
+      "$argon2i$v=19$m=8,t=3,p=1$cGlua2hpbWFsYXlhbg$fIDyM/GeZo/N0zEhrnCswVzdWAmqsBaSVzR5RscXY3Y"
+X now read the non root secrets into rwlock on startup
+X now require secrets for all modification endpoints
+    - mandatory param "secret", optional "is_global"
+
+~ test
+
+? can we get better error messaging than "Invalid query string" ?????
+    - a lot of work for later.  have to pull warp and change the "query" fx
+
+~ ALL modification fx's need to return immediately and set the status.  even stuff that happens quick could be delayed if scribe is busy.
+    - but what about taht hting they sent their result messages to ....
+

@@ -1,0 +1,22 @@
+CREATE TABLE films (
+      code        char(5) CONSTRAINT firstkey PRIMARY KEY,
+      title       varchar(40) NOT NULL,
+      did         integer NOT NULL,
+      date_prod   date,
+      kind        varchar(10),
+      len         interval hour to minute
+  );
+
+
+
+
+CREATE TABLE ii (
+    token       text PRIMARY KEY,
+    vector      int[] NOT NULL,
+    timestamp   timestamptz NOT NULL
+);
+
+INSERT INTO ii VALUES ('rabbit', '{198273, 234, 53453, 85}',    now());
+INSERT INTO ii VALUES ('cow',    '{198273, 234, 53453, 85,19823, 24, 5343, 5}',    now());
+
+INSERT INTO ii VALUES ('cow',    '{12, 13, 14, 15,16, 17, 18, 19}',    now());

@@ -1,0 +1,177 @@
+
+  // okay we've queried all the indexes.  now we need to check for dup docIds
+  // concatenate all the shardIntersections into single indexIntersections
+  // then line up all the indexIntersections.  they should still be sorted by docId (increasing i think)
+  // then walk down all of them together, looking for matching doc ids.  just like we did in the multi-intersection algo.
+  // actually that's exactly what we're doing  ... getting the intersection of docIds among the various indexIntersections.
+  //     can we reuse the multiintersection function for this??????
+  // but we dont need to get ALL .... wait yeah we do.  cos most relevant ones might be at the bottom
+  // and wait .... these aren't sorted by docId anymore anyway .... the ferrets break them into buckets based on the sorter .... hmmmmm.  right????
+  // so maybe multiplying relevances is a bad idea.  let's add them instead.  or just take max????? lets just take max for now.  easiest.
+  // MAX
+  // actually let's just ignore dups.  just check page 1 for dups at the very end.  let's get enough extra to make sure we can still fill out page 1 if lots of dups.
+  // if dups in the final page 1+, dedup by adding or multiplying their sorting values.  this will be a rather unfair boosting but that's okay
+
+
+
+
+  // we need to find duplicate docIds
+  // each attribute will have a set of unique docIds
+  // so docIds could be shared between attributes
+  // so we need to get intersection of attributes' docIds .... but this would have to be pairwise for each attribute pair ...
+        // maybe not efficient?  also intersection not great cos not sorted by docId anymore ...
+        // we need to
+        //
+// we need a map where key is docId and value is (relevances_or_sortables, queryCookedToks)
+    // ... just make 2 maps
+// then combine the relevances_or_sortables, and then sort the map's list of docIds
+//...
+// then read the location objects for docIds and queryCookedToks to build highlighted results
+// 💥
+
+
+
+re snippets/highlighting:
+
+
+        // wait ... we still need to figure out how to combine nearby highlights in a single snippet ...
+        // minHighlightContext
+        // make a new vec locPairListsPerSnippet = vec<vec<(usize, usize)>>
+
+        //wait again ..... we're starting at the end of the fVal to mark highlights .... but only the first ones will be returned -- if there are lots ...
+        // let's ignore that for now.  optimization opportunity for the future
+
+        // what params would i want for snippets.... ?
+        // - max chars for all snippets // ignore this for now? ... no it's good i think .... MAX_SNIPPETS_CHARS
+        // - min context chars per highlight (minHighlightContext)
+        //
+        // combine highlights per snippet
+
+
+        // ehhhh should we insert all the highlight tags first?  or break up text into untagged snippets first ... prob break up first rihgt????
+
+        // but what if there's just 1 highlight.  do we expand its context to fill maxChars?
+        // or what if ..................
+
+        // this is getting too complicated. give up for now.  just return single-highlight snippets... ugh no thats terrible difjIOSHDS*DUF(S*F&)98f78e7r293r
+
+        // walk along locPairs.   let's rename it to highlights.  a "highlight" is a tuple (start,stop) location pair.
+        // so walk along highlights.   HOW TO CLUSTER HIGHLIGHTS INTO THE BEST SNIPPETS?!??!?!? THIS IS COMPLICATED D: D: D:
+        //
+        //i think it should start at the beginning.  even if there are better matches later????
+
+        // google and NPR just show a single snippet .... no sometimes google shows 2 snippets
+
+        // google is being really fancy ... it picks out a snippet that doesn't have the most highlights, but seems the most descriptive.
+
+
+      //m__cookedTokOrig_locPairs is complete????
+      //so ...NOW.... uhm... we have pairs.  so it doesn't matter what the actual token is anymore
+      // just get the locPairs as a list, sorted decreasing by endLoc.  then insert the highlight tags
+
+
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      //////////////////////////////////////////// highlighting and phrase stuff notes - prob outdated now ///////////////////////////////////////////////////
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      //ok now we have m_cookedTok_vtLocPairs ... what next ?
+      //    use m_field_queryCookedToksOrig   to BUILD   m_cookedTokOrig_vtLocsOffsets
+      // how to do that ... ?
+
+      //for each tok in cookedTok, make sure it's in cookedToksOrig.
+      //     if it's not, then we know it's a subphrase.  but what's its parent phrase?  we cant just look in all the cookedToksOrig values ... cos a subphrase might be in multiple query phrases
+      //    hmm .... we need to know a subphrase's parent phrase ....
+      // ok so we could refactor a bunch of stuff so that each tok in m_field_queryCookedToks somehow points to a potential parent tok ... but that seems like a lot of work.
+      // instead, let's just figure it out again here.
+      // we have:
+      //          queryCookedToksOrig
+      //          dFHitToks
+      //
+      // we need:
+      //          m__dfHitTok_parentTok
+      // how?
+      // we know
+      //          - a dfhTok has a parentTok if: (1) dfhTok isn't in queryCookedToksOrig
+      //          - a dfhTok has a specific parentTok if all of that parentTok's children are in dFHitToks
+      // so:
+      //      - for each multi-word (space-containing) origTok:
+      //          - get all newbornTokChildren (do this early, before loops)
+      //          - put these in m_phraseTok_children.............................. why
+      //          - and then flip that to build m_subPhrase_parentPhrase
+      // ok but rn:
+      //      here:   - for each dfhTok, check if it's in m_subPhrase_parentPhrase AND if all of that parentPhrase's children (m_phraseTok_children) are in dfhToks too - (m_phraseTok_children must b sorted)
+      //              - - if so, then we know we need to ONLY highlight matches that overlap with the other children matches
+      //              - -       - put parentPhrase in list of dfhParentPhrases for this doc-field
+      //              - - if not, discard this document from the results (unless the dfhTok is also in queryCookedToksOrig)
+      //              - -     if dfhTok is in queryCookedToksOrig
+      //               -           - put it in m_origCookedTok_vtLocsOffsets
+      //              -
+      //              - for each dfhParentPhrase:
+      //              -   - for child in sorted m_phraseTok_children, get its start & stop loc sets from m_cookedTok_vtLocPairs
+      //                     -- WHAT NEXT? GIVEN MULTIPLE CHILD INSTANCES IN A DOC MAYBE
+      //              -       - ensure that its start loc is before the prev child's stoploc.           ... .....             BUT THERE COULD BE MULTIPLE IN DOC-FIELD
+      //              -   - if they all are, get total dfhParentPhrase start and stop locations, and put them in m_origCookedTok_vtLocsOffsets
+      //              - concat all values from m_origCookedTok_vtLocsOffsets into vtLocsOffsets
+      //              -     convert vtLocsOffsets to vtLocs_start_stop
+      //              -     order vtLocs_start_stop by stop location, increasing
+      //              -     iterate backwards through these and look for overlapping items.  if overlapping, remove both, and replace with a highlight span that covers both
+      //              -     vtLocs_start_stop
+
+      //              - wait fuck.... what if a dfhTok is a subphrase and also it's own parent phrase... like "i am" and "i am cool" in same query.... ffffffff
+      //              -   - no that's okay.  just check later if that dfhTok is also in queryCookedToksOrig, like normal
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+      // //move this to another loop later, after m_cookedTok_vtLocPairs and m_cookedTokOrig_vtLocsOffsets are built
+      // // or maybe not another loop actually.  should still be per this field...
+      // for loc in _dfLocationsDescending {                                                                               //each loc should be at a char boundary
+      //   let left = fVal[0..loc].to_string();
+      //   let right = fVal[loc..].to_string();
+      //   fVal = format!("{}🌈{}", left, right).to_string();
+      //   let leftIndex = getSpaceBoundary(&fVal, loc as i32, minHighlightContext * -1);
+      //   let rightIndex = getSpaceBoundary(&fVal, loc as i32, minHighlightContext);
+      //   let snippet = fVal[leftIndex..rightIndex].to_string().trim().to_string();
+      //   snippets.push(snippet);
+      // }
+      // m_field_docHighlightedFieldValue.insert(st(f), fVal);
+
+
+re highlights, snippets
+
+  //now, we have to make sure that all hlts in a snippet actually get highlighted... why wasn't this working before?
+
+
+  //the problem is that the hltsLIsts is built making assumptions about total snippet lenghts... those assumptions aren't always held up later,
+  //    when we're deciding how much context text to pad the highlights with ...
+  //so, i think we should determine snippet start/stop locs earlier .... while getting the hlts?
+  //maybe we need to make a vec of snippet structs?  that includes start/stop and hlts?
+
+  //ok i think having minHighlightContext and ( maxHighlightContext AND max_total_snippets_length )  is a mess
+  //lets just have minHighlightContext and max_total_snippets_length
+  //so that the snippet length is predictable, given the hlt locations...
+
+
+  //OR should we do ross's idea, of getting an array of alternating [plain, bold] elements ...
+  //and then ... there's no risk of returning a snippet that contains a non-highlighted matched element (from over-extending the snippet past an ignored hlt)
+  //    no not now
+  //ok no actually we HAVE to do it like this.  cos otherwise there could end up being a non-highlighted match within "minHighlightContext" chars of a hlt.
+  //    that gets tacked on for context.  but actually should be highlighted.
+  //BUT it seems like string copying would take longer??? taking all those slices ... but it's not copying ... they're just refs i think ....
+
+
+      // if m_fieldShard_sov.contains_key(key) {
+
+      //   // let sovRr = getDir_rocksRoot_sovabydid(c, r, wid, v, &shardName);
+      //   // let sovDb = &openDb(&sovRr);
+      //   // createAndLoadNewRocksDbMaybe(&sovRr, false);   //but why.  just to create the dir? is that necessary?  will rocks do that?
+      //   let sov = &m_fieldShard_sov[key];
+
+      //   //write
+
+      //   writeSovabydid(&sov, field, c, wid, shardName);
+      // }
+
+
+
+      let tivRr = getDir_rocksRoot_tivabydid(c, r, wid, v, &shardName);
+      let tivDb = &openDb(&tivRr);
+      createAndLoadNewRocksDbMaybe(&tivRr, false);

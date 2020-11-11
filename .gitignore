@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+
+/tmp
+/tmp*
+/.tmp
+/.tmp*
+/worp_data
+/worp_data*
+/data_for_worp_ferret
+/data_repos
+/data_repos/
+/root_static*
+/credentials
+
+*.pem

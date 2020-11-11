@@ -1,0 +1,5 @@
+this dir was copied from the worp dir in my projects repo on sept 16 2020.
+
+going to stop using projects dir for worp now.
+
+also i'm going to start checking in passwords like aws and git

@@ -1,0 +1,259 @@
+worp is a serverless search engine.
+
+it provides a single key/value store.  a map if u will.
+
+it's goal is to provide lightning fast search for small/medium data sizes.
+
+here's how it works:
+
+TERMS:
+- COS = cloud object storage
+        - b2, s3, ... ? rackspace?
+        - answer: b2.  b/c aws charges $0.02/GB for transfers between AWS data centers
+                        -- backblaze charges $0.01 for data downloads to anywhere.
+                        - although data transfer free within aws region, we need to move IBs around the world
+- IB - index block - chunk of data that the lambda will search to find actual value or pointers to next IB.
+
+
+raw data is stored in b2.  
+indices are also stored in b2.
+
+off - AWS instance is empty - MINCOST: single backblaze storage only: $0.005/gb/mo 
+cold - lambdas exist but totally cold - MINCOST: fraction of warm-MINCOST 
+warm - lambda containers are alive and waiting for requests - MINCOST: min elasticsearch price: $16/mo  
+
+need to be able to serve infinite map size.  inifite num keys and infinite value sizes.  
+
+so i need to be able to scale the number of lambdas.  which means multiple accounts on hand.  
+
+-- is 1000 the limit in all regions???
+
+https://aws.amazon.com/elasticsearch-service/pricing/
+https://www.elastic.co/pricing
+https://cloud.elastic.co/pricing -- cool! pricing per aws vs google 
+
+elastic:
+
+storage -- price/hour
+32 gb ---- 0.152 = $3.42/gB/mo
+16 gb ---- 0.075 = $3.38/gB/mo
+8 gb ---- 0.0378 = $3.40/gB/mo
+4 gb ---- 0.0189 = $3.40/gB/mo
+
+^ in VIRGINIA ONLY!
+twice that in south america
+^^ plus $16 i think 
+
+...no -- three states... off, cold, warm 
+
+question is how are IBs cached .... do we need lambda per IB?  
+
+or just effectively 1 lambda.  1 lambda that can have different cached IBs 
+
+HOW TO MANAGE GLOBAL LAMBDA STATE????
+
+it's the DOCKER CONTAINER that stays a live .... that's where the cache is right?  not some external memory cache?
+
+so memory cache should be specific to specific lambda?
+
+
+https://docs.aws.amazon.com/lambda/latest/dg/limits.html
+
+this is limits for a speicifc lambda i think?
+
+
+
+
+when service is turned on, *ALL* of the index blocks are loaded into their respective lambdas.  
+
+- there is a lambda per index block.  so, an index block can be at most 3 gb in memory - the lambda memory limit.  
+
+BUT - IBs must be specific to map.  aka specific to client.  
+
+... how are we building the indices?  we should use Packet for that?  no just use lambda for now.  
+
+load data to b2, then process it with lambda.  
+
+upload:  send data to lambda which feeds to b2.
+
+lambda reads raw data and generates and saves index blocks IBs 
+
+when data gets updated - adds or removes -- activity gets recorded in dynamodb?
+
+2 types of update:
+- single 
+- bulk 
+
+single:  each update is stored in dynamodb.  
+bulk:  bulk data gets written straight to b2 file.  pointer added to dynamodb 
+
+we can't have instant single uploads.  cos dynamodb is 10 ms???
+
+have to update the actual indices?  but lambdas have to check somehow to see if their IBs are up to date....
+
+maybe RAM cache is unavoidable........... ????
+
+well what if ... all updates go straight to b2...
+
+certain buckets - or filename formats - can indicate they hold updated info
+
+... use s3 bucket names to store info?... i mean "object" names 
+
+use s3 file names for data storage?  use s3 names as indicators of when indices in b2 need to be updated :)
+
+https://stackoverflow.com/questions/9241679/amazon-s3-what-are-considered-put-copy-post-list-request
+https://aws.amazon.com/s3/pricing/
+$0.000005 per request :) 
+
+using s3 names as key-value storage:
+https://stackoverflow.com/questions/25061960/s3-performance-for-list-by-prefix-with-millions-of-objects-in-a-single-bucket
+
+maximum s3 filename length (key) = 1 kB  https://stackoverflow.com/questions/6870824/what-is-the-maximum-length-of-a-filename-in-s3#:~:targetText=As%20follows%20from%20the%20Amazon,filename%20length%20is%201024%20characters.
+
+
+limit 100 buckets per account 
+https://www.backblaze.com/b2/docs/buckets.html
+
+
+....dont do free keyvalue using aws.  if exploited enough to make any money, aws would change pricing
+
+store data in b2 
+use aurora serverless to store updates 
+ - dont do warpspeed updates.  just have slow updates.  once a minute or something. 
+    - fastest way to allow warp updates is expensive memcache, or slow (10 ms) dynamodb 
+ - load updates to local s3 
+ - store pointer to s3 updates in aurora serverless.
+ - how often update IB?  10 seconds?
+ - bulk updates:    wait for 1 minute of silence before re-indexing
+                    only done by db manager
+ - single updates:  wait for 1 second of silence unless a single update has been waiting for 2+ seconds already
+
+ - customer can set these values??!  they can be charged per re-index, so they can pay more or less for frequency/speed of index updates.
+
+ wait ... where are these datas located .... there needs to be a single source of truth for raw data AND indices ... 
+
+ updates sent to ..... main data center.  us-east probably.  temp update data sitting in us-east.
+
+ customer data indices updated within TIME_VALUES of update request. 
+
+ IBs loaded to warm lambdas globally per update .... kind of expensive? part of re-indexing fee customer pays for.
+
+ temp update data should be stored in s3 object in the region of the accepting lambda.  free transfers.
+ UNLESS the lambda just wants to immediately re-index w/out ferreting the data away for a bit ....
+
+- tokenization should happen immediately.  for new values.  
+- IBs should be small enough that new data can be reindexed while 
+    1. limiting interruptions with other reindexings  (SMALL IBs)
+    2. limiting data transfer costs   (SMALL IBs)
+    3. fast to search thorugh single IB
+
+but BIG enough for:
+    1.  maximize amount of data retrieved per block pointer.  
+            cos have to iterate through block pointers.
+
+
+--> lambda could load several IBs!
+        - fast reindexing 
+        - limited data transfer
+        - still lots of pointers .... 
+            - i think lots of pointers is okay
+            - they'll be in other lambdas in the same datacenter so... should be v fast 
+        .... how does search propagate through lambdas... 
+        DONT KEEP EVERY LAMBDA OPEN AND WAITING FOR THE NEXT! 
+        -->  this would require using servers.  on and waiting.  lambdas are initiated but never wait for each other.
+                the last lambda just sends a message back to the initiating server. 
+
+expect 1 ms latency between lambdas in same AZ.  
+
+we need results in under 30 ms.
+
+how do we do that....  max 15 lambda connections?
+then each lambda gets 1 ms to search its index 
+
+stopping here.
+
+inter/intra AZ latency:
+https://richardimaoka.github.io/blog/network-latency-analysis-with-ping-aws/
+
+0.09 ms within same AZ 
+
+
+
+
+...............
+
+tech stack:
+
+b2
+lambda 
+
+
+search engine software:
+
+support columns:
+
+keyword
+full text (multiple tokenization options?)
+coordinates
+
+----------------------------------------
+
+costs:  
+
+b2 download: $0.01/GB
+
+
+
+----------------------------------------
+-
+
+first time upload:
+
+user uploads data directly to b2   https://stackoverflow.com/questions/37554667/upload-to-backblaze-from-client/50661906
+
+once bulk upload is complete, packet spot price instance indexes and stores data 
+
+then, lambdas load their respective IBs and are kept warm henceforth.  
+
+
+updates:
+
+addition/deletion:
+
+sent to lambda.  lambda:
+- updates the raw data in b2
+- propagates the update throughout the IBs in warm lambdas.
+    - so we need a log of all warm lambdas at all time.  
+    - each lambda container needs a unique id. 
+
+as needed, packet function runs to rebalance b2 raw data and IBs.
+- maybe once a day.  or intermittently via spot instances.  
+
+
+lambda auto-warmer:
+- lambdas ensure that there are always more warm lambdas than we need.
+
+customer selects regions to be active.   or selects global access.
+
+if specific regions - do they stay warm at all times?  yes i think so because data transfer is expensive.  more expensive to move data than 
+to keep it warm in lambda i think.  unless we used s3 but that costs 4x b2.  
+
+
+
+
+..................
+
+
+each upload .... should IBs be stored in b2?  or just raw data 
+should raw data be stored?  or just a history of data uploads.
+storing text history of uploads would be inefficient. 
+unless uploading zip files or numpy tables.
+
+that's okay?  
+
+... how does CDN work - what's the time cost 
+
+some STORAGE providers have free transfers: https://www.cloudorado.com/cloud_storage_comparison.jsp
+
+
+

@@ -1,0 +1,38 @@
+https://www.wappalyzer.com/quote/75RUT14JZF9
+
+APPLICATION	HOSTNAME	VERSION	LANGUAGE
+Algolia	engie.com	3.35.0	
+Algolia	jumpermedia.co	3.24.9	
+Algolia	merivale.com		
+Algolia	veganrva.com	3.24.9	
+Algolia	docs.k6.io	3.35.1	
+Algolia	ppgpaints.com	3.33.0	
+Algolia	domainesia.com	3.24.9	
+Algolia	freshvanroot.com	3.24.9	
+Algolia	imunify360.com	3.33.0	
+Algolia	audioteka.com	3.35.0
+
+#	HOSTNAME
+1	declikdeco.com
+2	samse.fr
+3	fontawesome.ru
+4	nintendo.com.au
+5	wp.exparch.at
+6	addons.prestashop.com
+7	companeo.nl
+8	ibisworld.com
+9	edtech.events
+10	tailwindcomponents.com
+
+https://www.nintendo.com/
+
+algolia very slow:
+https://www.ibisworld.com/
+https://tailwindcomponents.com/ - cos in france
+
+
+check out these?
+https://www.wappalyzer.com/technologies/awesomplete
+
+sites with typeahead element but might not be using algolia 
+

@@ -1,0 +1,126 @@
+stupid algolia demo results:
+
+https://preview.algolia.com/instantsearch/?q=oven%20wind%20tv%20phone%20camera%20cell%20car&idx=instant_search&p=0
+
+"oven wind tv phone camera cell car"
+
+oven wind tv phone camera cell fawefsdgdfsd
+
+https://blog.burntsushi.net/transducers/
+
+https://stackoverflow.com/questions/56261476/why-is-finding-the-intersection-of-integer-sets-faster-with-a-vec-compared-to-bt
+
+https://stackoverflow.com/questions/29584073/should-i-use-aws-elastic-beanstalk-or-the-amazon-ec2-container-service-ecs-to
+
+--------
+
+PROBLEMS:
+
+1.  for prefix search, you have to search using ALL matches to prefix.  not just most common ones. so:
+"geek sq"
+and
+"giant sq"
+give appropriate results.
+
+so from "sq" we need ALL TOKENS STARTING WITH SQ.
+
+
+
+https://stackoverflow.com/questions/55642700/query-a-global-secondary-index-using-contains-in-dynamodb-local
+
+https://stackoverflow.com/questions/40283653/how-to-use-in-statement-in-filterexpression-using-array-dynamodb/40294674
+
+?
+
+use dynamodb to query index stuff ...
+
+
+hmmm what about ... for each doc in dynamodb... making an attribute per token?
+attribute name = token
+attribute value  = ... idk, metadata for token.  relevance etc
+... would tha twork?  could we do "AND" operations ....
+to simulate
+
+.... i think this isn't possible.  i think we need to do out set intersections to determine docs with matching tokens.
+internet seems to think that doing "in" operation in query will scan one by one.  just works for filter.
+
+
+worp mvp:
+
+- yes fuzzy for common tokens (real words)
+- NO LEMMAS
+- NO PREFIX SEARCH
+
+SIMPLIFY PARSING:
+- remove (') (set manually in conf
+- split_remove (-/\[]*#.,~`) (all punctuation. default)           // sept 2020 - what about double quote " ?
+- split_keep ($%^@!) (set manually in conf)
+
+note - get rid of remove_and_keep and split_and_remove or whatever.
+it's fine if "$234" isn't it's own token.  that should just be $ and 234
+
+with prefix, i might have to search 1000 combos instead of just 1.
+"geek sq" vs [geek squid, geek squirt, geek square, etc]
+
+SO ...
+
+don't pre-load anything into lambda.  cold lambda is fine.  extra 250 ms rarely.
+cheap/easy to keep warm w/ no download needed.
+
+just parse query into tokens, then download the exactly dynamodb object for that token
+ie its <tok>_<index>_docIds (in future, store this file as sorted numeric array parquet file)
+
+TODO:
+- simplify parsing (write python function)
+- write code to scan wasabi for new uploads and generate ddb inverted indexes (from ec2/packet)
+- create search lambda:
+    - parse query
+    - download ddb IIs
+    - get set intersection of II docIds
+    - get token-doc relevances values (from IIs? or other) and meta (sortables, filterables)
+    - rank & filter results
+    - store entire results in s3 for pagination
+    - return requested page of results.
+
+good articles:
+https://rockset.com/blog/secondary-indexes-for-analytics-on-dynamodb/
+https://rockset.com/blog/analytics-on-dynamodb-athena-spark-elastic/
+
+todo read for BEGIN on primary key search in ddb?
+https://rockset.com/blog/secondary-indexes-for-analytics-on-dynamodb/
+
+jan 1 2020
+STOP DEVELOPMENT OF WORP.
+
+algolia already exists.  maybe we can make a cheaper pretty-good knockoff later, but that's not very fun.
+
+serverless algolia compeitior isn't possible.  300 ms.  exploiting lambdas isn't sustainable.
+
+do lakehouse.  nothing like it exists.
+
+serverless object storage based consistent acid compliant database.
+
+later we can support indexing for lakehouse for 800 ms search response times i think.  not much worse than 300 ms worp estimates
+
+Jan 2 2020
+
+but .... what if load balancing and spot instances can be used to make pretty-fast much-cheaper algolia competitor????
+TODO - do a load balancing experiment to see.
+
+lakehouse has more potential but a lot harder ....
+
+... i should just write a simple algolia ripoff and put it behind a load balancer .... to see if it can be a lot cheaper or not.
+
+jan 6 2020  - DO WORP
+lakehouse at best would be 1/4 price of aws.  worp could be 1/10 price of algolia.
+
+TODO - design worp
+- serverfull approach.
+- pre-fetch load balancer
+- ddb megacache
+- client-side levanshtein (when connection speed is fast enough) - store copy of tokens in local storage.
+
+todo first?  not load balancing.
+- single small ec2 server performance.
+- single application.  no ddb
+- what language?  python right? c++ ???????

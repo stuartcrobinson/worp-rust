@@ -1,0 +1,64 @@
+{
+  "name": "create-react-app-typescript-redux",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@material-ui/core": "4.11.0",
+    "@material-ui/icons": "4.9.1",
+    "@material-ui/lab": "^4.0.0-alpha.56",
+    "@material-ui/styles": "4.10.0",
+    "axios": "^0.21.0",
+    "chart.js": "^2.9.4",
+    "date-fns": "^2.16.1",
+    "localforage": "1.9.0",
+    "query-string": "^6.13.6",
+    "react": "^16.14.0",
+    "react-chartjs-2": "^2.10.0",
+    "react-dom": "^16.14.0",
+    "react-redux": "7.2.1",
+    "react-router-dom": "5.2.0",
+    "react-scripts": "3.4.3",
+    "redux-devtools-extension": "2.13.8",
+    "redux-logger": "3.0.6",
+    "redux-persist": "6.0.0",
+    "redux-thunk": "2.3.0",
+    "typescript": "3.7.5"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not ie <= 11",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^4.2.4",
+    "@testing-library/react": "^9.5.0",
+    "@testing-library/user-event": "^7.2.1",
+    "@types/chart.js": "^2.9.27",
+    "@types/jest": "^24.9.1",
+    "@types/node": "^12.12.68",
+    "@types/react": "16.9.53",
+    "@types/react-dom": "^16.9.8",
+    "@types/react-redux": "7.1.9",
+    "@types/react-router-dom": "5.1.6",
+    "@types/redux-logger": "3.0.8",
+    "@types/webpack-env": "1.15.3",
+    "eslint-plugin-react": "7.21.4"
+  }
+}

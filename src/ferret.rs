@@ -812,7 +812,7 @@ pub async fn startFerret(port: u16) -> Result<(), Box<dyn Error>> {
             Some(s) => s.to_string(),
             None    => return Err(werr(&format!("missing field [global_secret]")))
           };
-          p.global_secret = None;
+          
           // println!("WorpdriveSchema_userInput: p: {:?}", p);
           ensureCorrectSecret(&secret, &Some(true))?;
           let collection = &p.collection;

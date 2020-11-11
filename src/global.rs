@@ -160,20 +160,20 @@ pub fn resetStaticMaps_clxnsRoot(clxnsRoot: &str, isQueryMode: bool) -> Result<(
   Ok(())
 }
 
-pub fn deleteCollection(pid: &str, collectionName: &str) -> Result<String, Box<dyn Error>>{
+pub fn deleteCollection(pid: &str, collectionName: &str) -> Result<String, Box<dyn Error>> {
   deleteCollection_(collectionName, SQUIRREL_COLLECTIONS_ROOT, pid);
   deleteCollection_(collectionName, FERRET_COLLECTIONS_ROOT, pid);
-  Ok(format!("deleted {}/{}", pid, collectionName))
+  Ok(format!("deleted if exists: {}/{}", pid, collectionName))
 }
 
-pub fn deleteCollection_(collectionName: &str, clxnsRoot: &str, pid: &str) {
-  println!("deleteCollection_ c, cxsRoot, pid: {}, {}, {}", collectionName, clxnsRoot, pid);
+pub fn deleteCollection_(collectionName: &str, clxnsRoot: &str, pid: &str)  {
+  // println!("deleteCollection_ c, cxsRoot, pid: {}, {}, {}", collectionName, clxnsRoot, pid);
 
   let collectionParent = &getDir_collectionParent(collectionName, clxnsRoot, pid);
-  println!("collectionParent:, {}", collectionParent);
+  // println!("collectionParent:, {}", collectionParent);
 
   std::fs::remove_dir_all(collectionParent);
-  println!("deleted collection {} by deleting dir {}", collectionName, collectionParent);
+  // println!("deleted collection {} by deleting dir {}", collectionName, collectionParent);
 }
 
 
@@ -702,6 +702,7 @@ pub fn createCollection_fromObj(schemaParsedUserInput_input: WorpdriveSchema_use
 
   let schemaParsedUserInput = sanitizeSchema_userInput(schemaParsedUserInput_input);
 
+
   let schemaStr : String = serde_json::to_string(&schemaParsedUserInput).unwrap();
   // println!("schemaStr: {:?}", schemaStr);
   let schema = parseSchemaStr(&schemaStr);
@@ -856,6 +857,8 @@ pub fn sanitizeSchema_userInput(mut s: WorpdriveSchema_userInput) -> WorpdriveSc
   if s.is_worptail                       .is_none() { s.is_worptail                            = Some(false);            }
   if s.max_docs_per_shard                .is_none() { s.max_docs_per_shard                     = Some(150000);            }
   if s.fields                            .is_none() { s.fields                                 = Some(Vec::new());            }
+
+  s.global_secret = None;   //this is just needed to give the secret to the endpoint.  not needed again and shouldnt actually be in schema
 
   let mut fields = s.fields.unwrap();
 
@@ -2305,7 +2308,7 @@ pub fn buildQueriesMap(qp: &WorpdriveQueryParent, schema: &WorpdriveSchema) -> H
   m_field_query
 }
 
-pub fn queryClxLocal(queryJson: &str, isQueryMode: bool) {
+pub fn queryClxLocal(queryJson: &str, isQueryMode: bool) -> (String, String) {
 
   unsafe{QUERY_MODE = isQueryMode;}
 
@@ -2322,6 +2325,7 @@ pub fn queryClxLocal(queryJson: &str, isQueryMode: bool) {
   let queryParent = sanitizeQueryUserInput(query_userInput, &schema);
   let (consoleResponse, jsonResponse) = queryClxLocal_clxnsRoot(&queryParent, &schema, clxnsRoot, DEFAULT_VINTAGE).unwrap();
   println!("\n\n\n{}\n\n{}", jsonResponse, consoleResponse);
+  return (consoleResponse, jsonResponse);
 }
 
 pub fn queryClxLocal_parallel(queryJson: &str, isQueryMode: bool) {

@@ -294,6 +294,7 @@ pub struct WorpdriveSchema_userInput {
   pub fields: Option<Vec<WorpdriveFieldObject_userInput>>,
 
   #[serde(skip_serializing_if = "Option::is_none")]
+  ///this is just needed to give the secret to the endpoint.  not needed again and shouldnt actually be in schema
   pub global_secret: Option<String>                                     //this secret will always be global, cos users wont have access to this endpoint.  u can only make a new collection via worp website. right?
 }
 

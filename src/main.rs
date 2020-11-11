@@ -102,9 +102,11 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+  use crate::global::deleteCollection;
   use crate::global::createCollection;
   use crate::global::indexDocInCollection;
   use crate::global::queryClxLocal;
+  use crate::global::deleteDocInCollection;
 
   #[test]
   fn it_works() {
@@ -112,10 +114,12 @@ mod tests {
   }
 
   #[test]
-  fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
+  fn deleteCollection_createCollection_indexDoc_query_deleteDoc_query_deleteCollection_assertNumResultsForQueries() -> Result<(), Box<dyn std::error::Error>> {
 
     let pid = "w1";
     let collection = "c1";
+
+    deleteCollection(pid, collection);
 
     let ccBody = r#"{
       "pid": "w1",
@@ -125,7 +129,7 @@ mod tests {
     }"#;
     createCollection(ccBody)?;
 
-    indexDocInCollection(pid, collection, r#"{"num": 1, "quote": "Reality continues to ruin my life." }"#);
+    let docId = indexDocInCollection(pid, collection, r#"{"num": 1, "quote": "Reality continues to ruin my life." }"#);
 
     let queryBody = r#"{
       "pid": "w1",
@@ -136,7 +140,18 @@ mod tests {
       "highlight_post_tag": "🟥"
     }"#;
 
-    queryClxLocal(queryBody, false);
+    let (_, jsonResponse) = queryClxLocal(queryBody, false);
+    let val: serde_json::Value = serde_json::from_str(&jsonResponse).unwrap();
+    // let total = val["total"].as_u64().unwrap();
+    assert_eq!(val["total"].as_u64(), Some(1));
+
+    deleteDocInCollection(pid, collection, docId);
+
+    let (_, jsonResponse) = queryClxLocal(queryBody, false);
+    let val: serde_json::Value = serde_json::from_str(&jsonResponse).unwrap();
+    assert_eq!(val["total"].as_u64(), Some(0));
+
+    deleteCollection(pid, collection);
 
     Ok(())
   }

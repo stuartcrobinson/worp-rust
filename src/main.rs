@@ -102,10 +102,43 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-  
+  use crate::global::createCollection;
+  use crate::global::indexDocInCollection;
+  use crate::global::queryClxLocal;
+
   #[test]
   fn it_works() {
     assert_eq!(2 + 2, 4);
+  }
+
+  #[test]
+  fn do_stuff() -> Result<(), Box<dyn std::error::Error>> {
+
+    let pid = "w1";
+    let collection = "c1";
+
+    let ccBody = r#"{
+      "pid": "w1",
+      "collection": "c1",
+      "do_log_queries": true,
+      "global_secret": "my secret globalSecret"
+    }"#;
+    createCollection(ccBody)?;
+
+    indexDocInCollection(pid, collection, r#"{"num": 1, "quote": "Reality continues to ruin my life." }"#);
+
+    let queryBody = r#"{
+      "pid": "w1",
+      "collection": "c1",
+      "queries": [{ "query": "rea" }],
+      "do_highlights_tagged": true,
+      "highlight_pre_tag": "🟢",
+      "highlight_post_tag": "🟥"
+    }"#;
+
+    queryClxLocal(queryBody, false);
+
+    Ok(())
   }
 
 

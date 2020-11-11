@@ -31,7 +31,7 @@ $WORP_CMD  cc '{
                     "pid": "w1",
                     "collection": "c1",
                     "do_log_queries": true,
-                    "global_secret" "doesnt matter here.  only gets read from endpoint"
+                    "global_secret" "my secret globalSecret"
                   }'
 
 $WORP_CMD ic w1 c454 '{"num": 1, "quote": "Reality continues to ruin my life." }'
